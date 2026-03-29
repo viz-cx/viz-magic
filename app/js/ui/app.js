@@ -66,6 +66,12 @@ var App = (function() {
                             if (character) {
                                 state.characters[user] = character;
                                 state.inventories[user] = state.inventories[user] || [];
+                                if (!state.quests) state.quests = {};
+                                if (!state.quests[user]) {
+                                    state.quests[user] = (typeof QuestSystem !== 'undefined')
+                                        ? QuestSystem.createPlayerQuestState()
+                                        : { active: [], completed: [], dailyProphecyDay: 0 };
+                                }
                                 console.log('Character restored from grimoire:', grimoire.name, grimoire.class);
                             }
                             navigateTo('home');

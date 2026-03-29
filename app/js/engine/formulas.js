@@ -166,7 +166,7 @@ var GameFormulas = (function() {
      * @returns {number} defense value
      */
     function calculateDefense(resilience, level) {
-        return Math.floor(resilience * 2 + level * 3);
+        return Math.floor(resilience + level);
     }
 
     /**

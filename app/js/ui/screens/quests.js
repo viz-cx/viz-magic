@@ -15,7 +15,11 @@ var QuestsScreen = (function() {
         var user = VizAccount.getCurrentUser();
         var character = StateEngine.getCharacter(user);
         var state = StateEngine.getState();
-        var playerQuests = (state.quests && state.quests[user]) || QuestSystem.createPlayerQuestState();
+        if (!state.quests) state.quests = {};
+        if (!state.quests[user]) {
+            state.quests[user] = QuestSystem.createPlayerQuestState();
+        }
+        var playerQuests = state.quests[user];
         var blockNum = state.headBlock || 0;
 
         el.innerHTML =
