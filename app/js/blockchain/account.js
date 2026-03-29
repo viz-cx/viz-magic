@@ -62,8 +62,11 @@ var VizAccount = (function() {
             var regularValid = false;
 
             // Validate the regular key against chain authority
-            var keyAuths = account.regular_authority.key_auths;
-            var threshold = account.regular_authority.weight_threshold;
+            var keyAuths = [];
+            if (account.regular_authority && account.regular_authority.key_auths) {
+                keyAuths = account.regular_authority.key_auths;
+            }
+            var threshold = account.regular_authority ? account.regular_authority.weight_threshold : 1;
 
             for (var i = 0; i < keyAuths.length; i++) {
                 if (keyAuths[i][1] >= threshold) {

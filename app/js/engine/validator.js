@@ -29,6 +29,16 @@ var ActionValidator = (function() {
                 return _validateCharAttune(action, worldState, sender);
             case AT.HUNT:
                 return _validateHunt(action, worldState, sender, blockNum);
+            case AT.CHALLENGE:
+                return _validateDuelChallenge(action, worldState, sender, blockNum);
+            case AT.ACCEPT:
+                return _validateDuelAccept(action, worldState, sender, blockNum);
+            case AT.COMMIT:
+                return _validateDuelCommit(action, worldState, sender);
+            case AT.REVEAL:
+                return _validateDuelReveal(action, worldState, sender);
+            case AT.FORFEIT:
+                return _validateDuelForfeit(action, worldState, sender);
             case AT.ITEM_EQUIP:
                 return _validateEquip(action, worldState, sender);
             case AT.ITEM_UNEQUIP:
@@ -91,6 +101,144 @@ var ActionValidator = (function() {
         }
 
         return { valid: true, error: null };
+    }
+
+    function _validateDuelChallenge(action, worldState, sender, blockNum) {
+        var data = action.data || {};
+        var duels = worldState.duels || { pending: {}, active: {} };
+        var account = worldState.characters[sender];
+        if (!account) {
+            return { valid: false, error: 'no_character' };
+        }
+        if (!data.target || !worldState.characters[data.target]) {
+            return { valid: false, error: 'invalid_duel_target' };
+        }
+        if (data.target === sender) {
+            return { valid: false, error: 'invalid_duel_target' };
+        }
+        if (!data.strategy_hash) {
+            return { valid: false, error: 'missing_strategy_hash' };
+        }
+        if (data.rounds && data.rounds !== 3) {
+            return { valid: false, error: 'invalid_duel_rounds' };
+        }
+        if (data.deadline_block && data.deadline_block <= blockNum) {
+            return { valid: false, error: 'invalid_duel_deadline' };
+        }
+        if (_findOpenDuelBetween(duels, sender, data.target)) {
+            return { valid: false, error: 'duel_already_open' };
+        }
+        return { valid: true, error: null };
+    }
+
+    function _validateDuelAccept(action, worldState, sender, blockNum) {
+        var data = action.data || {};
+        var duels = worldState.duels || { pending: {} };
+        var duel = duels.pending && duels.pending[String(data.challenge_ref)];
+        if (!worldState.characters[sender]) {
+            return { valid: false, error: 'no_character' };
+        }
+        if (!duel) {
+            return { valid: false, error: 'duel_not_found' };
+        }
+        if (duel.target !== sender) {
+            return { valid: false, error: 'not_duel_target' };
+        }
+        if (!data.strategy_hash) {
+            return { valid: false, error: 'missing_strategy_hash' };
+        }
+        if (duel.deadlineBlock && blockNum > duel.deadlineBlock) {
+            return { valid: false, error: 'duel_accept_expired' };
+        }
+        return { valid: true, error: null };
+    }
+
+    function _validateDuelCommit(action, worldState, sender) {
+        var data = action.data || {};
+        var duel = _getActiveDuel(worldState, data.combat_ref);
+        if (!worldState.characters[sender]) {
+            return { valid: false, error: 'no_character' };
+        }
+        if (!duel) {
+            return { valid: false, error: 'duel_not_found' };
+        }
+        if (!_isDuelParticipant(duel, sender)) {
+            return { valid: false, error: 'not_duel_participant' };
+        }
+        if (!data.strategy_hash) {
+            return { valid: false, error: 'missing_strategy_hash' };
+        }
+        if (!data.round || data.round < 2 || data.round > (duel.rounds || 3)) {
+            return { valid: false, error: 'invalid_duel_round' };
+        }
+        return { valid: true, error: null };
+    }
+
+    function _validateDuelReveal(action, worldState, sender) {
+        var data = action.data || {};
+        var duel = _getActiveDuel(worldState, data.combat_ref);
+        if (!worldState.characters[sender]) {
+            return { valid: false, error: 'no_character' };
+        }
+        if (!duel) {
+            return { valid: false, error: 'duel_not_found' };
+        }
+        if (!_isDuelParticipant(duel, sender)) {
+            return { valid: false, error: 'not_duel_participant' };
+        }
+        if (!data.round || data.round < 1 || data.round > (duel.rounds || 3)) {
+            return { valid: false, error: 'invalid_duel_round' };
+        }
+        if (!data.strategy || !data.strategy.intent || !data.strategy.salt) {
+            return { valid: false, error: 'invalid_duel_reveal' };
+        }
+        return { valid: true, error: null };
+    }
+
+    function _validateDuelForfeit(action, worldState, sender) {
+        var data = action.data || {};
+        var duel = _getAnyDuel(worldState, data.combat_ref);
+        if (!worldState.characters[sender]) {
+            return { valid: false, error: 'no_character' };
+        }
+        if (!duel) {
+            return { valid: false, error: 'duel_not_found' };
+        }
+        if (!_isDuelParticipant(duel, sender)) {
+            return { valid: false, error: 'not_duel_participant' };
+        }
+        return { valid: true, error: null };
+    }
+
+    function _getActiveDuel(worldState, combatRef) {
+        var duels = worldState.duels || { active: {} };
+        return duels.active && duels.active[String(combatRef)];
+    }
+
+    function _getAnyDuel(worldState, combatRef) {
+        var duels = worldState.duels || { pending: {}, active: {} };
+        var ref = String(combatRef);
+        return (duels.active && duels.active[ref]) || (duels.pending && duels.pending[ref]) || null;
+    }
+
+    function _isDuelParticipant(duel, sender) {
+        return !!duel && (duel.challenger === sender || duel.target === sender);
+    }
+
+    function _findOpenDuelBetween(duels, accountA, accountB) {
+        var groups = [duels.pending || {}, duels.active || {}];
+        for (var g = 0; g < groups.length; g++) {
+            var keys = Object.keys(groups[g]);
+            for (var i = 0; i < keys.length; i++) {
+                var duel = groups[g][keys[i]];
+                if (!duel) continue;
+                if ((duel.challenger === accountA && duel.target === accountB) ||
+                    (duel.challenger === accountB && duel.target === accountA)) {
+                    return duel;
+                }
+            }
+        }
+        return null;
     }
 
     function _validateEquip(action, worldState, sender) {

@@ -7,10 +7,10 @@ var VizMagicConfig = (function() {
 
     /** VIZ blockchain node endpoints (HTTP and WebSocket) */
     var NODES = [
-        'wss://solox.world/ws',
-        'https://viz.lexa.host/',
         'https://api.viz.world/',
-        'https://node.viz.cx/'
+        'https://node.viz.cx/',
+        'https://viz.lexa.top/',
+        'wss://solox.world/ws'
     ];
 
     /** Protocol identifiers registered on VIZ chain */

@@ -1,60 +1,21 @@
 /**
  * Viz Magic — PvP Duel Screen
  * Commit-reveal duel UI with accessibility support.
- * Phases: Pre-Duel → Seal (Commit) → Reveal → Result
+ * Phases: Pre-Duel → Seal (Commit) → Waiting → Reveal/Result
  */
 var DuelScreen = (function() {
     'use strict';
 
     var SEAL_TIMER_SECONDS = 15;
+    var registeredListeners = false;
 
-    /** Current duel UI state */
-    var duelState = {
-        phase: 'pre',       // pre, seal, waiting, reveal, result
-        combatRef: '',
-        opponent: '',
-        currentRound: 1,
-        totalRounds: 3,
-        selectedIntent: null,
-        sealTimer: null,
-        sealTimeLeft: SEAL_TIMER_SECONDS,
-        strategySecret: null, // {intent, spell, energy, salt, key, iv, hash}
-        roundResults: [],
-        challengeData: null,
-        autoMode: false
-    };
+    var duelState = _createInitialState();
 
-    /**
-     * Render the duel screen.
-     * @param {Object} [opts] - {opponent, combatRef, challengeData}
-     */
-    function render(opts) {
-        opts = opts || {};
-        var el = Helpers.$('screen-duel');
-        if (!el) return;
-
-        if (opts.opponent) duelState.opponent = opts.opponent;
-        if (opts.combatRef) duelState.combatRef = opts.combatRef;
-        if (opts.challengeData) duelState.challengeData = opts.challengeData;
-
-        switch (duelState.phase) {
-            case 'pre':     _renderPreDuel(el); break;
-            case 'seal':    _renderSealPhase(el); break;
-            case 'waiting': _renderWaiting(el); break;
-            case 'reveal':  _renderReveal(el); break;
-            case 'result':  _renderResult(el); break;
-            default:        _renderPreDuel(el); break;
-        }
-    }
-
-    /**
-     * Show duel screen with specific opponent.
-     */
-    function startDuel(opponent, combatRef, challengeData) {
-        duelState = {
+    function _createInitialState() {
+        return {
             phase: 'pre',
-            combatRef: combatRef || '',
-            opponent: opponent,
+            combatRef: '',
+            opponent: '',
             currentRound: 1,
             totalRounds: 3,
             selectedIntent: null,
@@ -62,13 +23,61 @@ var DuelScreen = (function() {
             sealTimeLeft: SEAL_TIMER_SECONDS,
             strategySecret: null,
             roundResults: [],
-            challengeData: challengeData || null,
-            autoMode: false
+            challengeData: null,
+            autoMode: false,
+            pendingAction: '',
+            waitingMessageKey: 'duel_waiting_chain',
+            errorKey: '',
+            opponentCommitted: false,
+            opponentRevealedIntent: '',
+            myRevealedIntent: '',
+            finalWinsMe: 0,
+            finalWinsOpp: 0
         };
-        Helpers.EventBus.emit('navigate', 'duel');
     }
 
-    // --- Pre-Duel Phase ---
+    function render(opts) {
+        opts = opts || {};
+        var el = Helpers.$('screen-duel');
+        if (!el) return;
+
+        if (opts.opponent) duelState.opponent = opts.opponent;
+        if (opts.combatRef) duelState.combatRef = String(opts.combatRef);
+        if (opts.challengeData) duelState.challengeData = opts.challengeData;
+
+        _syncFromState();
+        _ensureEventListeners();
+
+        switch (duelState.phase) {
+            case 'pre':
+                _renderPreDuel(el);
+                break;
+            case 'seal':
+                _renderSealPhase(el);
+                break;
+            case 'waiting':
+                _renderWaiting(el);
+                break;
+            case 'reveal':
+                _renderReveal(el);
+                break;
+            case 'result':
+                _renderResult(el);
+                break;
+            default:
+                _renderPreDuel(el);
+                break;
+        }
+    }
+
+    function startDuel(opponent, combatRef, challengeData) {
+        duelState = _createInitialState();
+        duelState.opponent = opponent || '';
+        duelState.combatRef = combatRef ? String(combatRef) : '';
+        duelState.challengeData = challengeData || null;
+        duelState.phase = 'pre';
+        Helpers.EventBus.emit('navigate', 'duel');
+    }
 
     function _renderPreDuel(el) {
         var t = Helpers.t;
@@ -77,6 +86,15 @@ var DuelScreen = (function() {
         var oppChar = StateEngine.getCharacter(duelState.opponent) || {};
         var myDuels = _getPlayerStats(user);
         var oppDuels = _getPlayerStats(duelState.opponent);
+        var pendingNotice = '';
+        var beginLabel = duelState.combatRef ? t('duel_begin') : t('duel_begin_real');
+
+        if (!duelState.combatRef) {
+            pendingNotice = '<p class="duel-hint">' + t('duel_real_only_notice') + '</p>';
+        }
+        if (duelState.errorKey) {
+            pendingNotice += '<p class="error">' + t(duelState.errorKey) + '</p>';
+        }
 
         var html = '<div class="duel-screen" role="region" aria-label="' + t('duel_title') + '">' +
             '<div aria-live="polite" id="duel-announcer" class="sr-only"></div>' +
@@ -97,11 +115,10 @@ var DuelScreen = (function() {
                 '</div>' +
             '</div>' +
             '<p class="duel-format">' + t('duel_best_of_3') + '</p>' +
+            pendingNotice +
             '<div class="duel-actions">' +
                 '<button class="btn btn-primary btn-large btn-glow" id="btn-duel-begin" ' +
-                    'aria-label="' + t('duel_begin') + '">' + t('duel_begin') + '</button>' +
-                '<button class="btn btn-secondary btn-glow" id="btn-duel-auto" ' +
-                    'aria-label="' + t('duel_auto_mode') + '">' + t('duel_auto_mode') + '</button>' +
+                    'aria-label="' + beginLabel + '">' + beginLabel + '</button>' +
                 '<button class="btn btn-secondary" id="btn-duel-decline" ' +
                     'aria-label="' + t('duel_decline') + '">' + t('duel_decline') + '</button>' +
             '</div>' +
@@ -112,14 +129,7 @@ var DuelScreen = (function() {
         Helpers.$('btn-duel-begin').addEventListener('click', function() {
             SoundManager.play('duel_start');
             SoundManager.vibrate('heavy');
-            duelState.phase = 'seal';
-            render();
-        });
-
-        Helpers.$('btn-duel-auto').addEventListener('click', function() {
-            SoundManager.play('duel_start');
-            SoundManager.vibrate('heavy');
-            duelState.autoMode = true;
+            duelState.errorKey = '';
             duelState.phase = 'seal';
             render();
         });
@@ -131,7 +141,6 @@ var DuelScreen = (function() {
             Helpers.EventBus.emit('navigate', 'home');
         });
 
-        // Battle Narrator announcement
         if (typeof BattleNarrator !== 'undefined') {
             BattleNarrator.announce(t('duel_narrator_pre', {
                 opponent: oppChar.name || duelState.opponent
@@ -139,17 +148,14 @@ var DuelScreen = (function() {
         }
     }
 
-    // --- Seal Phase (Commit) ---
-
     function _renderSealPhase(el) {
         var t = Helpers.t;
         var round = duelState.currentRound;
-
         var intents = [
             { id: 'strike', icon: '\uD83D\uDD25', name: t('intent_strike'), hint: t('intent_strike_hint') },
             { id: 'guard',  icon: '\uD83D\uDEE1\uFE0F', name: t('intent_guard'),  hint: t('intent_guard_hint') },
-            { id: 'weave',  icon: '\u26A1',     name: t('intent_weave'),  hint: t('intent_weave_hint') },
-            { id: 'mend',   icon: '\uD83C\uDF00',  name: t('intent_mend'),   hint: t('intent_mend_hint') }
+            { id: 'weave',  icon: '\u26A1', name: t('intent_weave'), hint: t('intent_weave_hint') },
+            { id: 'mend',   icon: '\uD83C\uDF00', name: t('intent_mend'), hint: t('intent_mend_hint') }
         ];
 
         var html = '<div class="duel-screen" role="region" aria-label="' + t('duel_seal_phase') + '">' +
@@ -175,43 +181,28 @@ var DuelScreen = (function() {
 
         html += '</div>' +
             '<div id="duel-seal-status" class="duel-seal-status" aria-live="polite"></div>' +
+            '<p class="duel-hint">' + t('duel_manual_only_notice') + '</p>' +
             '</div>';
 
         el.innerHTML = html;
         _bindSealEvents(el);
         _startSealTimer();
 
-        // Narrator
         if (typeof BattleNarrator !== 'undefined') {
             BattleNarrator.announce(t('duel_narrator_seal', { seconds: SEAL_TIMER_SECONDS }));
         }
 
-        // Focus first spell card
         A11y.focusFirst(el.querySelector('.spell-card-grid'));
-
-        // Auto-mode: pick random intent after 1 second
-        if (duelState.autoMode) {
-            setTimeout(function() {
-                if (duelState.phase === 'seal' && !duelState.selectedIntent) {
-                    var intents = ['strike', 'guard', 'weave', 'mend'];
-                    var rand = intents[Math.floor(Math.random() * 4)];
-                    var card = document.querySelector('[data-intent="' + rand + '"]');
-                    if (card) card.click();
-                }
-            }, 1000);
-        }
     }
 
     function _bindSealEvents(el) {
         var cards = el.querySelectorAll('.spell-card');
-
         for (var i = 0; i < cards.length; i++) {
             cards[i].addEventListener('click', _onIntentSelect);
         }
 
-        // Keyboard: 1-4 for spell selection
         el.addEventListener('keydown', function(e) {
-            var keyNum = parseInt(e.key);
+            var keyNum = parseInt(e.key, 10);
             if (keyNum >= 1 && keyNum <= 4) {
                 var intents = ['strike', 'guard', 'weave', 'mend'];
                 var card = el.querySelector('[data-intent="' + intents[keyNum - 1] + '"]');
@@ -221,12 +212,11 @@ var DuelScreen = (function() {
     }
 
     function _onIntentSelect() {
-        if (duelState.selectedIntent) return; // Already sealed
+        if (duelState.selectedIntent) return;
 
         var intent = this.getAttribute('data-intent');
         duelState.selectedIntent = intent;
 
-        // Visual feedback
         var cards = document.querySelectorAll('.spell-card');
         for (var i = 0; i < cards.length; i++) {
             cards[i].classList.remove('selected');
@@ -238,34 +228,27 @@ var DuelScreen = (function() {
         SoundManager.play('seal');
         SoundManager.vibrate('seal');
 
-        // Seal animation
         var self = this;
         setTimeout(function() {
             self.classList.add('sealed');
-
-            // Disable all cards
             var allCards = document.querySelectorAll('.spell-card');
             for (var j = 0; j < allCards.length; j++) {
                 allCards[j].disabled = true;
             }
-
             _commitStrategy(intent);
         }, 300);
 
-        // Status text
         var statusEl = Helpers.$('duel-seal-status');
         if (statusEl) {
             statusEl.textContent = Helpers.t('duel_sealed');
         }
 
-        // Narrator
         if (typeof BattleNarrator !== 'undefined') {
             BattleNarrator.announce(Helpers.t('duel_narrator_sealed'));
         }
     }
 
     function _commitStrategy(intent) {
-        // Generate salt and encryption key
         var salt = DuelSystem.generateSalt();
         var strategy = {
             intent: intent,
@@ -283,20 +266,25 @@ var DuelScreen = (function() {
                 hash: hash
             };
 
-            // Broadcast commit
             if (duelState.combatRef && duelState.currentRound > 1) {
+                duelState.pendingAction = 'commit';
                 DuelProtocol.commitStrategy(
                     duelState.combatRef,
                     duelState.currentRound,
                     hash,
                     function(err) {
                         if (err) {
+                            duelState.errorKey = 'error_network';
                             Toast.error(Helpers.t('error_network'));
+                            duelState.phase = 'pre';
+                            render();
+                            return;
                         }
+                        _moveToWaiting('duel_waiting_commit_chain');
                     }
                 );
             } else if (!duelState.combatRef && duelState.opponent) {
-                // This is a new challenge — broadcast challenge with hash
+                duelState.pendingAction = 'challenge';
                 var currentBlock = StateEngine.getState().headBlock || 0;
                 var deadline = currentBlock + VizMagicConfig.BLOCK.DUEL_ACCEPT_WINDOW;
                 DuelProtocol.createChallenge(
@@ -304,17 +292,52 @@ var DuelScreen = (function() {
                     'best_of_3', 3, 100, hash, deadline,
                     function(err) {
                         if (err) {
+                            duelState.errorKey = 'error_network';
                             Toast.error(Helpers.t('error_network'));
+                            duelState.phase = 'pre';
+                            render();
+                            return;
                         }
+                        _moveToWaiting('duel_waiting_accept_chain');
                     }
                 );
+            } else if (duelState.combatRef && _canRevealCurrentRound()) {
+                duelState.pendingAction = 'reveal';
+                DuelProtocol.revealStrategy(
+                    duelState.combatRef,
+                    duelState.currentRound,
+                    strategy,
+                    '',
+                    '',
+                    function(err) {
+                        if (err) {
+                            duelState.errorKey = 'error_network';
+                            Toast.error(Helpers.t('error_network'));
+                            duelState.phase = 'pre';
+                            render();
+                            return;
+                        }
+                        duelState.myRevealedIntent = intent;
+                        _moveToWaiting('duel_waiting_resolution');
+                    }
+                );
+            } else {
+                duelState.errorKey = duelState.combatRef ? 'duel_waiting_commit_chain' : 'duel_no_combat_ref';
+                duelState.phase = 'pre';
+                render();
             }
-
-            // Transition to waiting
-            _clearSealTimer();
-            duelState.phase = 'waiting';
+        }).catch(function() {
+            duelState.errorKey = 'error_network';
+            duelState.phase = 'pre';
             render();
         });
+    }
+
+    function _moveToWaiting(messageKey) {
+        _clearSealTimer();
+        duelState.waitingMessageKey = messageKey || 'duel_waiting_chain';
+        duelState.phase = 'waiting';
+        render();
     }
 
     function _startSealTimer() {
@@ -333,11 +356,9 @@ var DuelScreen = (function() {
             if (duelState.sealTimeLeft <= 0) {
                 _clearSealTimer();
                 if (!duelState.selectedIntent) {
-                    // Auto-select random intent
-                    var intents = ['strike', 'guard', 'weave', 'mend'];
-                    var rand = intents[Math.floor(Math.random() * 4)];
-                    var card = document.querySelector('[data-intent="' + rand + '"]');
-                    if (card) card.click();
+                    duelState.errorKey = 'duel_manual_selection_required';
+                    duelState.phase = 'pre';
+                    render();
                 }
             }
         }, 1000);
@@ -350,10 +371,10 @@ var DuelScreen = (function() {
         }
     }
 
-    // --- Waiting Phase ---
-
     function _renderWaiting(el) {
         var t = Helpers.t;
+        var waitingText = t(duelState.waitingMessageKey || 'duel_waiting_chain');
+        var errorText = duelState.errorKey ? '<p class="error">' + t(duelState.errorKey) + '</p>' : '';
 
         var html = '<div class="duel-screen" role="region" aria-label="' + t('duel_waiting') + '">' +
             '<div aria-live="polite" id="duel-announcer" class="sr-only"></div>' +
@@ -370,16 +391,16 @@ var DuelScreen = (function() {
                     '</span>' +
                 '</div>' +
             '</div>' +
-            '<p class="duel-waiting-text">' + t('duel_waiting_opponent') + '</p>' +
+            '<p class="duel-waiting-text">' + waitingText + '</p>' +
             '<div class="duel-waiting-dots" aria-hidden="true">' +
                 '<span class="dot"></span><span class="dot"></span><span class="dot"></span>' +
             '</div>' +
+            errorText +
+            '<p class="duel-hint">' + t('duel_waiting_honest_notice') + '</p>' +
             '<button class="btn btn-secondary" id="btn-duel-forfeit">' + t('duel_forfeit') + '</button>' +
             '</div>';
 
         el.innerHTML = html;
-
-        // Play tension sound
         SoundManager.play('waiting_tension');
 
         Helpers.$('btn-duel-forfeit').addEventListener('click', function() {
@@ -389,82 +410,19 @@ var DuelScreen = (function() {
             Helpers.EventBus.emit('navigate', 'home');
         });
 
-        // Listen for opponent commit/reveal events
-        _listenForOpponent();
-
-        // Narrator
         if (typeof BattleNarrator !== 'undefined') {
             BattleNarrator.announce(t('duel_narrator_waiting'));
         }
-
-        // For demo/testing: auto-advance after 3 seconds
-        setTimeout(function() {
-            if (duelState.phase === 'waiting') {
-                _simulateOpponentReveal();
-            }
-        }, 3000);
     }
-
-    function _listenForOpponent() {
-        Helpers.EventBus.on('duel_reveal', function(data) {
-            if (data.combatRef === duelState.combatRef) {
-                duelState.phase = 'reveal';
-                render();
-            }
-        });
-    }
-
-    function _simulateOpponentReveal() {
-        // For demo: simulate opponent choosing and reveal
-        var intents = ['strike', 'guard', 'weave', 'mend'];
-        var oppIntent = intents[Math.floor(Math.random() * 4)];
-
-        var secret = duelState.strategySecret;
-        if (!secret) return;
-
-        // Build mock round result
-        var user = VizAccount.getCurrentUser();
-        var myChar = StateEngine.getCharacter(user) || {};
-        var oppChar = StateEngine.getCharacter(duelState.opponent) || {};
-        var pseudoHash = Date.now().toString(16) + Math.random().toString(16).substring(2);
-        while (pseudoHash.length < 40) pseudoHash += '0';
-
-        var roundResult = DuelSystem.resolveRound(
-            {
-                account: user || 'player',
-                potency: (myChar.stats && myChar.stats.pot) || 10,
-                resilience: (myChar.stats && myChar.stats.res) || 5,
-                level: myChar.level || 1,
-                school: myChar.school || 'ignis',
-                strategy: { intent: secret.intent, spell: '', energy: 100, salt: secret.salt }
-            },
-            {
-                account: duelState.opponent || 'opponent',
-                potency: (oppChar.stats && oppChar.stats.pot) || 10,
-                resilience: (oppChar.stats && oppChar.stats.res) || 5,
-                level: oppChar.level || 1,
-                school: oppChar.school || 'aqua',
-                strategy: { intent: oppIntent, spell: '', energy: 100, salt: 'demo' }
-            },
-            pseudoHash
-        );
-
-        duelState.roundResults.push({
-            result: roundResult,
-            myIntent: secret.intent,
-            oppIntent: oppIntent
-        });
-
-        duelState.phase = 'reveal';
-        render();
-    }
-
-    // --- Reveal Phase ---
 
     function _renderReveal(el) {
         var t = Helpers.t;
         var lastRound = duelState.roundResults[duelState.roundResults.length - 1];
-        if (!lastRound) { duelState.phase = 'pre'; render(); return; }
+        if (!lastRound) {
+            duelState.phase = 'waiting';
+            render();
+            return;
+        }
 
         var result = lastRound.result;
         var user = VizAccount.getCurrentUser() || 'player';
@@ -515,7 +473,6 @@ var DuelScreen = (function() {
                 '<p>' + t('duel_damage_taken') + ': ' + result.damageB + '</p>' +
             '</div>';
 
-        // Check if duel is over
         var winsMe = 0;
         var winsOpp = 0;
         for (var i = 0; i < duelState.roundResults.length; i++) {
@@ -526,7 +483,6 @@ var DuelScreen = (function() {
 
         var duelOver = (winsMe >= 2 || winsOpp >= 2 || duelState.roundResults.length >= duelState.totalRounds);
 
-        // Score display
         html += '<div class="duel-score" aria-label="' + t('duel_score') + '">' +
             '<span>' + winsMe + ' - ' + winsOpp + '</span>' +
             '</div>';
@@ -536,9 +492,8 @@ var DuelScreen = (function() {
                 '<button class="btn btn-primary btn-large" id="btn-duel-finish">' + t('duel_see_results') + '</button>' +
                 '</div>';
         } else {
-            // Strategy hint
-            html += '<p class="duel-hint">' + _getStrategyHint(lastRound.oppIntent) + '</p>';
-            html += '<div class="duel-actions">' +
+            html += '<p class="duel-hint">' + _getStrategyHint(lastRound.oppIntent) + '</p>' +
+                '<div class="duel-actions">' +
                 '<button class="btn btn-primary btn-large" id="btn-duel-next">' + t('duel_next_round') + '</button>' +
                 '</div>';
         }
@@ -546,7 +501,6 @@ var DuelScreen = (function() {
         html += '</div>';
         el.innerHTML = html;
 
-        // Narrator
         if (typeof BattleNarrator !== 'undefined') {
             BattleNarrator.announce(t('duel_narrator_reveal', {
                 myIntent: intentNames[lastRound.myIntent],
@@ -555,7 +509,6 @@ var DuelScreen = (function() {
             }));
         }
 
-        // Announce for screen readers
         var announcer = Helpers.$('duel-announcer');
         if (announcer) {
             announcer.textContent = resultText + '. ' +
@@ -580,29 +533,15 @@ var DuelScreen = (function() {
                     duelState.currentRound++;
                     duelState.selectedIntent = null;
                     duelState.strategySecret = null;
+                    duelState.opponentCommitted = false;
+                    duelState.opponentRevealedIntent = '';
+                    duelState.myRevealedIntent = '';
                     duelState.phase = 'seal';
                     render();
                 });
             }
         }
-
-        // Auto-mode: auto-advance after 2 seconds
-        if (duelState.autoMode) {
-            setTimeout(function() {
-                if (duelState.phase === 'reveal') {
-                    if (duelOver) {
-                        var btn = Helpers.$('btn-duel-finish');
-                        if (btn) btn.click();
-                    } else {
-                        var btn = Helpers.$('btn-duel-next');
-                        if (btn) btn.click();
-                    }
-                }
-            }, 2000);
-        }
     }
-
-    // --- Result Phase ---
 
     function _renderResult(el) {
         var t = Helpers.t;
@@ -638,7 +577,6 @@ var DuelScreen = (function() {
             '<p class="duel-final-score">' + winsMe + ' : ' + winsOpp + '</p>' +
             '<h2>' + t('duel_round_summary') + '</h2>';
 
-        // Round-by-round summary
         for (var i = 0; i < duelState.roundResults.length; i++) {
             var rr = duelState.roundResults[i];
             var roundWinner = rr.result.winner === user;
@@ -656,7 +594,6 @@ var DuelScreen = (function() {
             '<p>' + t('duel_xp_gained', { xp: xp }) + '</p>' +
             '</div>';
 
-        // Opponent pattern insight
         var insight = _getOpponentInsight();
         if (insight) {
             html += '<p class="duel-insight">' + insight + '</p>';
@@ -672,13 +609,12 @@ var DuelScreen = (function() {
 
         el.innerHTML = html;
 
-        // Narrator
         if (typeof BattleNarrator !== 'undefined') {
             BattleNarrator.announce(resultTitle + '. ' + winsMe + ' ' + t('duel_to') + ' ' + winsOpp);
         }
 
         Helpers.$('btn-duel-rematch').addEventListener('click', function() {
-            startDuel(duelState.opponent, '', null);
+            startDuel(duelState.opponent, duelState.combatRef, null);
         });
 
         Helpers.$('btn-duel-home').addEventListener('click', function() {
@@ -686,7 +622,183 @@ var DuelScreen = (function() {
         });
     }
 
-    // --- Helpers ---
+    function _syncFromState() {
+        var state = StateEngine.getState();
+        if (!state || !state.duels) return;
+
+        var duel = null;
+        if (duelState.combatRef && state.duels.active && state.duels.active[duelState.combatRef]) {
+            duel = state.duels.active[duelState.combatRef];
+        } else if (duelState.combatRef && state.duels.pending && state.duels.pending[duelState.combatRef]) {
+            duel = state.duels.pending[duelState.combatRef];
+        }
+
+        if (!duel && duelState.opponent) {
+            duel = _findRelatedDuel(state, duelState.opponent);
+            if (duel && duel.id) {
+                duelState.combatRef = String(duel.id);
+            }
+        }
+
+        if (!duel) return;
+
+        duelState.totalRounds = duel.rounds || duelState.totalRounds;
+        duelState.currentRound = duel.currentRound || duelState.currentRound;
+
+        var user = VizAccount.getCurrentUser();
+        duelState.opponentCommitted = _hasOpponentCommitted(duel, user, duelState.currentRound);
+
+        if (duel.roundResults && duel.roundResults.length) {
+            duelState.roundResults = _mapRoundResults(duel, user);
+            var latest = duelState.roundResults[duelState.roundResults.length - 1];
+            if (latest) {
+                duelState.myRevealedIntent = latest.myIntent;
+                duelState.opponentRevealedIntent = latest.oppIntent;
+                if (duel.status === 'completed') {
+                    duelState.phase = 'result';
+                    duelState.finalWinsMe = _countWinsForUser(duel.roundResults, user);
+                    duelState.finalWinsOpp = _countLossesForUser(duel.roundResults, user);
+                } else if (duelState.phase === 'waiting' || duelState.phase === 'seal') {
+                    duelState.phase = 'reveal';
+                }
+            }
+        }
+
+        if (duel.status === 'pending') {
+            duelState.waitingMessageKey = 'duel_waiting_accept_chain';
+            if (duelState.phase !== 'seal') {
+                duelState.phase = 'waiting';
+            }
+        }
+        if (duel.status === 'active') {
+            duelState.waitingMessageKey = _canRevealCurrentRound(duel) ? 'duel_waiting_reveal_chain' : 'duel_waiting_commit_chain';
+            if (duelState.phase === 'pre') {
+                duelState.phase = _canRevealCurrentRound(duel) ? 'seal' : 'waiting';
+            }
+        }
+    }
+
+    function _findRelatedDuel(state, opponent) {
+        var user = VizAccount.getCurrentUser();
+        var duel;
+        var id;
+
+        if (state.duels.pending) {
+            for (id in state.duels.pending) {
+                if (state.duels.pending.hasOwnProperty(id)) {
+                    duel = state.duels.pending[id];
+                    if (_duelInvolves(duel, user, opponent)) return duel;
+                }
+            }
+        }
+
+        if (state.duels.active) {
+            for (id in state.duels.active) {
+                if (state.duels.active.hasOwnProperty(id)) {
+                    duel = state.duels.active[id];
+                    if (_duelInvolves(duel, user, opponent)) return duel;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    function _duelInvolves(duel, user, opponent) {
+        return !!duel &&
+            ((duel.challenger === user && duel.target === opponent) ||
+             (duel.challenger === opponent && duel.target === user));
+    }
+
+    function _hasOpponentCommitted(duel, user, round) {
+        var side = duel.challenger === user ? 'B' : 'A';
+        return !!(duel.commits && duel.commits[round] && duel.commits[round][side]);
+    }
+
+    function _hasCurrentUserCommitted(duel, user, round) {
+        var side = duel.challenger === user ? 'A' : 'B';
+        return !!(duel.commits && duel.commits[round] && duel.commits[round][side]);
+    }
+
+    function _canRevealCurrentRound(duel) {
+        duel = duel || DuelStateManager.getDuelStatus(duelState.combatRef, StateEngine.getState());
+        if (!duel || duel.status !== 'active') return false;
+        var user = VizAccount.getCurrentUser();
+        if (!user) return false;
+        var round = duel.currentRound || duelState.currentRound || 1;
+        return _hasCurrentUserCommitted(duel, user, round);
+    }
+
+    function _mapRoundResults(duel, user) {
+        var mapped = [];
+        for (var i = 0; i < duel.roundResults.length; i++) {
+            var result = duel.roundResults[i];
+            var roundNumber = i + 1;
+            var reveals = duel.reveals && duel.reveals[roundNumber] ? duel.reveals[roundNumber] : {};
+            var mySide = duel.challenger === user ? 'A' : 'B';
+            var oppSide = mySide === 'A' ? 'B' : 'A';
+            mapped.push({
+                result: result,
+                myIntent: reveals[mySide] ? reveals[mySide].intent : '',
+                oppIntent: reveals[oppSide] ? reveals[oppSide].intent : ''
+            });
+        }
+        return mapped;
+    }
+
+    function _countWinsForUser(roundResults, user) {
+        var wins = 0;
+        for (var i = 0; i < roundResults.length; i++) {
+            if (roundResults[i].winner === user) wins++;
+        }
+        return wins;
+    }
+
+    function _countLossesForUser(roundResults, user) {
+        var losses = 0;
+        for (var i = 0; i < roundResults.length; i++) {
+            if (roundResults[i].winner && roundResults[i].winner !== user) losses++;
+        }
+        return losses;
+    }
+
+    function _ensureEventListeners() {
+        if (registeredListeners) return;
+        registeredListeners = true;
+
+        Helpers.EventBus.on('duel_reveal', function(data) {
+            if (!duelState.combatRef || String(data.combatRef) !== String(duelState.combatRef)) return;
+            duelState.waitingMessageKey = 'duel_waiting_resolution';
+            if (data.account === duelState.opponent) {
+                duelState.opponentRevealedIntent = data.intent || '';
+            }
+            _syncFromState();
+            if (App.getCurrentScreen() === 'duel') render();
+        });
+
+        Helpers.EventBus.on('duel_commit', function(data) {
+            if (!duelState.combatRef || String(data.combatRef) !== String(duelState.combatRef)) return;
+            if (data.account === duelState.opponent) {
+                duelState.opponentCommitted = true;
+                duelState.waitingMessageKey = 'duel_waiting_reveal_chain';
+            }
+            if (App.getCurrentScreen() === 'duel') render();
+        });
+
+        Helpers.EventBus.on('duel_accepted', function(data) {
+            if (duelState.opponent && (data.challenger === duelState.opponent || data.target === duelState.opponent)) {
+                duelState.combatRef = String(data.combatRef);
+                duelState.waitingMessageKey = 'duel_waiting_resolution';
+                if (App.getCurrentScreen() === 'duel') render();
+            }
+        });
+
+        Helpers.EventBus.on('duel_completed', function(data) {
+            if (!duelState.combatRef || String(data.combatRef) !== String(duelState.combatRef)) return;
+            _syncFromState();
+            if (App.getCurrentScreen() === 'duel') render();
+        });
+    }
 
     function _getPlayerStats(account) {
         var state = StateEngine.getState();
@@ -699,9 +811,8 @@ var DuelScreen = (function() {
     function _getStrategyHint(lastOppIntent) {
         var t = Helpers.t;
         var beats = VizMagicConfig.INTENT_BEATS;
-        // Find what beats the opponent's last intent
         for (var intent in beats) {
-            if (beats[intent] === lastOppIntent) {
+            if (beats.hasOwnProperty(intent) && beats[intent] === lastOppIntent) {
                 var names = {
                     strike: t('intent_strike'),
                     guard: t('intent_guard'),
@@ -721,13 +832,14 @@ var DuelScreen = (function() {
         var intentCounts = {};
         for (var i = 0; i < duelState.roundResults.length; i++) {
             var oppI = duelState.roundResults[i].oppIntent;
+            if (!oppI) continue;
             intentCounts[oppI] = (intentCounts[oppI] || 0) + 1;
         }
 
         var maxIntent = '';
         var maxCount = 0;
         for (var k in intentCounts) {
-            if (intentCounts[k] > maxCount) {
+            if (intentCounts.hasOwnProperty(k) && intentCounts[k] > maxCount) {
                 maxCount = intentCounts[k];
                 maxIntent = k;
             }
@@ -745,7 +857,6 @@ var DuelScreen = (function() {
         return '';
     }
 
-    // Clean up on navigation away
     Helpers.EventBus.on('navigate', function(screen) {
         if (screen !== 'duel') {
             _clearSealTimer();

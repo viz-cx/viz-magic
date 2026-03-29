@@ -103,7 +103,9 @@ var VizBroadcast = (function() {
     }
 
     /**
-     * Send a hunt action — combines custom op + award to NPC
+     * Send a hunt action — combines custom op + award to NPC when the target account exists.
+     * Solo/demo hunt settlement is intentionally disabled here because fairness-critical
+     * mana spending and rewards must remain auditable on-chain.
      * @param {string} creatureId - creature identifier
      * @param {string} zone - zone identifier
      * @param {string} spellId - spell used
@@ -121,21 +123,25 @@ var VizBroadcast = (function() {
             }
         };
 
-        // First broadcast the game action
+        // Broadcast the game action (VM custom op — records hunt on chain)
         gameAction(actionData, function(err, result) {
             if (err) {
                 callback(err);
                 return;
             }
 
-            // Then send the award to NPC (the "spellcasting")
+            // If NPC account exists on chain, also send award (mana spend)
+            // If NPC account doesn't exist, hunt still recorded — award is optional
             if (npcAccount) {
                 award(npcAccount, manaCost, 0, '', [], function(awardErr, awardResult) {
-                    callback(awardErr, { action: result, award: awardResult });
+                    if (awardErr) {
+                        console.log('Hunt award to NPC failed (hunt action still recorded):', awardErr);
+                    }
+                    // Hunt succeeds regardless of award result — the VM action is the proof
+                    callback(null, { action: result, award: awardResult || null });
                 });
             } else {
-                // Solo mode — no NPC account, just the action
-                callback(null, { action: result });
+                callback(null, { action: result, award: null });
             }
         });
     }

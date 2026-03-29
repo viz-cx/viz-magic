@@ -55,7 +55,7 @@ var ArenaScreen = (function() {
             var opp = Helpers.$('arena-opponent').value.trim().toLowerCase();
             if (!opp) return;
             SoundManager.play('tap');
-            DuelScreen.startDuel(opp, '', null);
+            DuelScreen.startDuel(opp, '', { source: 'arena_challenge' });
         });
 
         var content = Helpers.$('arena-content');
@@ -137,7 +137,7 @@ var ArenaScreen = (function() {
             challengeBtns[j].addEventListener('click', function() {
                 var account = this.getAttribute('data-account');
                 SoundManager.play('tap');
-                DuelScreen.startDuel(account, '', null);
+                DuelScreen.startDuel(account, '', { source: 'leaderboard_challenge' });
             });
         }
 
@@ -223,7 +223,7 @@ var ArenaScreen = (function() {
             continueBtns[m].addEventListener('click', function() {
                 var ref = this.getAttribute('data-combat-ref');
                 var opp = this.getAttribute('data-opponent');
-                DuelScreen.startDuel(opp, ref, null);
+                DuelScreen.startDuel(opp, ref, { source: 'history' });
             });
         }
     }

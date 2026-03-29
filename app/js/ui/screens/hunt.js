@@ -107,87 +107,205 @@ var HuntScreen = (function() {
         var creature = GameCreatures.getCreature(selectedCreature);
         var spell = GameSpells.getSpell(selectedSpell);
 
-        // Get real energy from blockchain
+        if (!user || !creature || !spell) {
+            resultEl.innerHTML = '<p class="error">' + t('error_network') + '</p>';
+            btn.disabled = false;
+            return;
+        }
+
         VizAccount.getAccount(user, function(err, accountData) {
-            var playerEnergy = 10000; // fallback
+            var playerEnergy = 10000;
             if (!err && accountData) {
                 playerEnergy = VizAccount.calculateCurrentEnergy(accountData);
             }
 
-            // Check if enough mana
             if (playerEnergy < spell.manaCost) {
                 resultEl.innerHTML = '<p class="error">' + t('hunt_not_enough_mana') + '</p>';
                 btn.disabled = false;
                 return;
             }
 
-            // Generate pseudo block hash for demo
-            var pseudoHash = Date.now().toString(16) + Math.random().toString(16).substring(2);
-            while (pseudoHash.length < 40) pseudoHash += '0';
+            resultEl.innerHTML = _renderPendingState(t, creature, spell, true);
+            SoundManager.play('tap');
+            SoundManager.vibrate('light');
 
-            var result = CombatSystem.resolveHunt(ch, creature, spell, pseudoHash, 0, playerEnergy);
-
-            // Broadcast to blockchain (fire and forget, optimistic UI)
             VizBroadcast.huntAction(
                 selectedCreature,
                 ch.currentZone || 'commons_first_light',
                 selectedSpell,
                 spell.manaCost,
-                '', // no NPC account for solo hunts
-                function(broadcastErr) {
-                    if (broadcastErr) console.log('Hunt broadcast error:', broadcastErr);
-                    else console.log('Hunt broadcast success');
+                creature.npcAccount || '',
+                function(broadcastErr, broadcastResult) {
+                    if (broadcastErr) {
+                        console.log('Hunt broadcast error:', broadcastErr);
+                        resultEl.innerHTML = _renderBlockedState(t, creature, spell, broadcastErr);
+                        _bindResultActions();
+                        btn.disabled = false;
+                        return;
+                    }
+
+                    // Get block_num from broadcast result, then fetch the actual block
+                    // to use witness_signature as Fate Entropy (unforgeable, unique per block)
+                    var blockNum = 0;
+                    if (broadcastResult && broadcastResult.action) {
+                        blockNum = broadcastResult.action.block_num || 0;
+                    }
+
+                    _resolveHuntFromBlock(blockNum, ch, creature, spell, playerEnergy, user, resultEl, t);
                 }
             );
+        });
+    }
 
-            // Persist XP and loot to state
+    /**
+     * Fetch block data from chain, extract witness_signature as Fate Entropy,
+     * then resolve combat deterministically.
+     * If block_num is 0 or fetch fails, falls back to DGP head block.
+     */
+    function _resolveHuntFromBlock(blockNum, ch, creature, spell, playerEnergy, user, resultEl, t) {
+        var _doResolve = function(fateEntropy, finalBlockNum) {
+            console.log('Hunt resolving with Fate Entropy (witness_signature):', fateEntropy.substring(0, 32) + '..., block:', finalBlockNum);
+
+            var result = CombatSystem.resolveHunt(ch, creature, spell, fateEntropy, finalBlockNum, playerEnergy);
+
+            // Apply results to local state
             if (result.victory) {
                 CharacterSystem.addXp(ch, result.xpGained);
-
                 var state = StateEngine.getState();
                 if (!state.inventories[user]) state.inventories[user] = [];
                 for (var li = 0; li < result.loot.length; li++) {
                     var lootItem = ItemSystem.createItem(
-                        result.loot[li].type,
-                        user,
-                        result.loot[li].rarity,
-                        0,
-                        '',
-                        true
+                        result.loot[li].type, user, result.loot[li].rarity, finalBlockNum, '', true
                     );
                     state.inventories[user].push(lootItem);
                 }
+                if (typeof QuestSystem !== 'undefined' && state.quests && state.quests[user]) {
+                    QuestSystem.updateQuestProgress(state.quests[user], 'hunt', { target: selectedCreature, count: 1 });
+                }
             }
+
+            ch.hp = result.hpRemaining;
+            if (ch.hp <= 0) ch.hp = 0;
 
             SoundManager.play(result.victory ? 'victory' : 'defeat');
             SoundManager.vibrate(result.victory ? 'medium' : 'triple');
             A11y.announceCombatResult(result, creature.name);
 
-            var html = '<div class="combat-result ' + (result.victory ? 'victory' : 'defeat') + '">';
-            html += '<h2>' + (result.victory ? t('hunt_victory') : t('hunt_defeat')) + '</h2>';
-            html += '<p>' + creature.name + ' (Lv' + result.creatureLevel + ')</p>';
-            if (result.critical) html += '<p class="critical">\u26A1 Critical Hit!</p>';
-            html += '<p>Damage dealt: ' + result.damageDealt + '</p>';
-            html += '<p>Damage taken: ' + result.damageTaken + '</p>';
-            if (result.victory) {
-                html += '<p>' + t('hunt_xp_gained') + ': ' + result.xpGained + '</p>';
-                if (result.loot.length > 0) {
-                    html += '<h3>' + t('hunt_loot') + '</h3>';
-                    for (var i = 0; i < result.loot.length; i++) {
-                        html += '<p class="' + Helpers.rarityClass(result.loot[i].rarity) + '">' +
-                            ItemSystem.getRarityInfo(result.loot[i].rarity).symbol + ' ' + result.loot[i].name + '</p>';
-                    }
+            resultEl.innerHTML = _renderCombatResult(t, result, creature);
+            _bindResultActions();
+        };
+
+        var _fetchBlock = function(num) {
+            viz.api.getBlock(num, function(err, block) {
+                if (err || !block) {
+                    console.log('get_block failed, falling back to DGP');
+                    _fallbackDGP();
+                    return;
+                }
+                // Use witness_signature as Fate Entropy — unforgeable, unique per block
+                var entropy = block.witness_signature || block.previous || '';
+                _doResolve(entropy, num);
+            });
+        };
+
+        var _fallbackDGP = function() {
+            viz.api.getDynamicGlobalProperties(function(err, dgp) {
+                if (err || !dgp) {
+                    // Ultimate fallback — should not happen if connected
+                    console.log('DGP fallback also failed');
+                    resultEl.innerHTML = _renderBlockedState(t, creature, spell, new Error('chain_unavailable'));
+                    _bindResultActions();
+                    return;
+                }
+                var headNum = dgp.head_block_number;
+                _fetchBlock(headNum);
+            });
+        };
+
+        if (blockNum > 0) {
+            _fetchBlock(blockNum);
+        } else {
+            _fallbackDGP();
+        }
+    }
+
+    function _renderCombatResult(t, result, creature) {
+        var html = '<div class="combat-result ' + (result.victory ? 'victory' : 'defeat') + '">';
+        html += '<h2>' + (result.victory ? t('hunt_victory') : t('hunt_defeat')) + '</h2>';
+        html += '<p>' + creature.name + ' (Lv' + result.creatureLevel + ')</p>';
+        if (result.critical) html += '<p class="critical">\u26A1 Critical Hit!</p>';
+        html += '<p>' + t('hunt_damage_dealt') + ': ' + result.damageDealt + '</p>';
+        html += '<p>' + t('hunt_damage_taken') + ': ' + result.damageTaken + '</p>';
+        if (result.victory) {
+            html += '<p>' + t('hunt_xp_gained') + ': ' + result.xpGained + '</p>';
+            if (result.loot.length > 0) {
+                html += '<h3>' + t('hunt_loot') + '</h3>';
+                for (var i = 0; i < result.loot.length; i++) {
+                    html += '<p class="' + Helpers.rarityClass(result.loot[i].rarity) + '">' +
+                        ItemSystem.getRarityInfo(result.loot[i].rarity).symbol + ' ' + result.loot[i].name + '</p>';
                 }
             }
-            html += '<button class="btn btn-primary" id="btn-hunt-again">' + t('hunt_again') + '</button>';
+        }
+        html += '<button class="btn btn-primary" id="btn-hunt-again">' + t('hunt_again') + '</button>';
+        html += '<button class="btn btn-secondary" id="btn-hunt-home">' + t('hunt_home') + '</button>';
+        html += '</div>';
+        return html;
+    }
+
+    function _renderPendingState(t, creature, spell, showHome) {
+        var html = '<div class="combat-result pending">' +
+            '<h2>' + t('hunt_pending_title') + '</h2>' +
+            '<p>' + Helpers.escapeHtml(creature.name) + '</p>' +
+            '<p>' + Helpers.escapeHtml(spell.name) + '</p>' +
+            '<p>' + t('hunt_pending_text') + '</p>';
+
+        if (showHome) {
             html += '<button class="btn btn-secondary" id="btn-hunt-home">' + t('hunt_home') + '</button>';
-            html += '</div>';
+        }
 
-            resultEl.innerHTML = html;
+        html += '</div>';
+        return html;
+    }
 
-            Helpers.$('btn-hunt-again').addEventListener('click', function() { render(); });
-            Helpers.$('btn-hunt-home').addEventListener('click', function() { Helpers.EventBus.emit('navigate', 'home'); });
-        });
+    function _renderSubmittedState(t, creature, spell) {
+        return '<div class="combat-result pending">' +
+            '<h2>' + t('hunt_submitted_title') + '</h2>' +
+            '<p>' + Helpers.escapeHtml(creature.name) + '</p>' +
+            '<p>' + Helpers.escapeHtml(spell.name) + '</p>' +
+            '<p>' + t('hunt_submitted_text') + '</p>' +
+            '<button class="btn btn-primary" id="btn-hunt-again">' + t('hunt_again') + '</button>' +
+            '<button class="btn btn-secondary" id="btn-hunt-home">' + t('hunt_home') + '</button>' +
+            '</div>';
+    }
+
+    function _renderBlockedState(t, creature, spell, broadcastErr) {
+        var reason = '';
+        if (broadcastErr && broadcastErr.message === 'hunt_requires_chain_target') {
+            reason = t('hunt_blocked_no_chain_target');
+        } else {
+            reason = t('hunt_blocked_text');
+        }
+
+        return '<div class="combat-result defeat">' +
+            '<h2>' + t('hunt_blocked_title') + '</h2>' +
+            '<p>' + Helpers.escapeHtml(creature.name) + '</p>' +
+            '<p>' + Helpers.escapeHtml(spell.name) + '</p>' +
+            '<p>' + reason + '</p>' +
+            '<button class="btn btn-primary" id="btn-hunt-again">' + t('hunt_again') + '</button>' +
+            '<button class="btn btn-secondary" id="btn-hunt-home">' + t('hunt_home') + '</button>' +
+            '</div>';
+    }
+
+    function _bindResultActions() {
+        var againBtn = Helpers.$('btn-hunt-again');
+        var homeBtn = Helpers.$('btn-hunt-home');
+
+        if (againBtn) {
+            againBtn.addEventListener('click', function() { render(); });
+        }
+        if (homeBtn) {
+            homeBtn.addEventListener('click', function() { Helpers.EventBus.emit('navigate', 'home'); });
+        }
     }
 
     return { render: render };
