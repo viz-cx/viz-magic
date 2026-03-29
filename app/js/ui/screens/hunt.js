@@ -114,6 +114,25 @@ var HuntScreen = (function() {
 
         var result = CombatSystem.resolveHunt(ch, creature, spell, pseudoHash, 0, 10000);
 
+        // BUG FIX: Persist XP and loot to state
+        if (result.victory) {
+            CharacterSystem.addXp(ch, result.xpGained);
+
+            var state = StateEngine.getState();
+            if (!state.inventories[user]) state.inventories[user] = [];
+            for (var li = 0; li < result.loot.length; li++) {
+                var lootItem = ItemSystem.createItem(
+                    result.loot[li].type,
+                    user,
+                    result.loot[li].rarity,
+                    0,
+                    '',
+                    true
+                );
+                state.inventories[user].push(lootItem);
+            }
+        }
+
         SoundManager.play(result.victory ? 'victory' : 'defeat');
         SoundManager.vibrate(result.victory ? 'medium' : 'triple');
         A11y.announceCombatResult(result, creature.name);

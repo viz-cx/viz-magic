@@ -114,6 +114,20 @@ var LangRU = {
     char_core_power: 'Сила Ядра',
     char_mana_regen: 'Регенерация Маны',
     char_spells: 'Заклинания',
+
+    // Spell descriptions
+    spell_firebolt_desc: 'Сфокусированный болт магического огня.',
+    spell_pyroclasm_desc: 'Разрушительное извержение огня.',
+    spell_inferno_desc: 'Величайшее заклинание огня. Поглощает всё.',
+    spell_stone_wall_desc: 'Защитный удар, подкреплённый магией камня.',
+    spell_stone_fist_desc: 'Удар кулаком из живого камня.',
+    spell_aegis_of_stone_desc: 'Облачись в несокрушимый камень. Отражает урон.',
+    spell_shadow_step_desc: 'Удар из тени. Высокий шанс критического удара.',
+    spell_shadow_bolt_desc: 'Болт концентрированной теневой энергии.',
+    spell_veil_step_desc: 'Полное исчезновение и удар с абсолютной точностью.',
+    spell_binding_vine_desc: 'Опутать магическими лозами. Замедляет цель.',
+    spell_healing_tide_desc: 'Призвать магию воды для исцеления ран.',
+    spell_grand_covenant_desc: 'Величайшее исцеляющее заклинание. Полное восстановление и щит.',
     char_achievements: 'Достижения',
     char_strengthen_core: 'Усилить Ядро',
 

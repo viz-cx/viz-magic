@@ -114,6 +114,20 @@ var LangEN = {
     char_core_power: 'Core Power',
     char_mana_regen: 'Mana Regeneration',
     char_spells: 'Spells',
+
+    // Spell descriptions
+    spell_firebolt_desc: 'A focused bolt of magical fire.',
+    spell_pyroclasm_desc: 'Unleash a devastating eruption of fire.',
+    spell_inferno_desc: 'The ultimate fire spell. Consumes everything.',
+    spell_stone_wall_desc: 'A defensive strike backed by stone magic.',
+    spell_stone_fist_desc: 'Smash with a fist of living stone.',
+    spell_aegis_of_stone_desc: 'Encase yourself in unbreakable stone. Reflects damage.',
+    spell_shadow_step_desc: 'Strike from the shadows. High critical chance.',
+    spell_shadow_bolt_desc: 'A bolt of concentrated shadow energy.',
+    spell_veil_step_desc: 'Vanish completely and strike with absolute precision.',
+    spell_binding_vine_desc: 'Ensnare with magical vines. Slows the target.',
+    spell_healing_tide_desc: 'Call upon water magic to heal wounds.',
+    spell_grand_covenant_desc: 'The ultimate healing spell. Full restoration and shield.',
     char_achievements: 'Achievements',
     char_strengthen_core: 'Strengthen Core',
 

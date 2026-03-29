@@ -42,13 +42,18 @@ var CharacterScreen = (function() {
     }
 
     function _renderSpells(ch) {
+        var t = Helpers.t;
         var html = '<div class="spell-list">';
         for (var i = 0; i < ch.spells.length; i++) {
             var spell = GameSpells.getSpell(ch.spells[i]);
             if (spell) {
+                var descKey = 'spell_' + spell.id + '_desc';
+                var desc = t(descKey);
+                // Fall back to English description if i18n key not found
+                if (!desc || desc === descKey) desc = spell.description;
                 html += '<div class="spell-item" style="border-left:3px solid ' + Helpers.schoolColor(spell.school) + '">' +
                     '<strong>' + spell.name + '</strong><br>' +
-                    '<small>' + spell.description + '</small>' +
+                    '<small>' + desc + '</small>' +
                     '</div>';
             }
         }
