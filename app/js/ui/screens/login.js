@@ -97,6 +97,17 @@ var LoginScreen = (function() {
             // Check if character exists (has Grimoire)
             var grimoire = VizAccount.parseGrimoire(accountData);
             if (grimoire && grimoire.class) {
+                // Restore character in StateEngine from grimoire
+                var state = StateEngine.getState();
+                if (!state.characters[account]) {
+                    var character = CharacterSystem.createCharacter(account, grimoire.name || account, grimoire.class);
+                    if (character) {
+                        state.characters[account] = character;
+                        state.inventories[account] = state.inventories[account] || [];
+                        state.quests[account] = state.quests[account] || (typeof QuestSystem !== 'undefined' ? QuestSystem.createPlayerQuestState() : {});
+                        console.log('Character restored from grimoire (login):', grimoire.name, grimoire.class);
+                    }
+                }
                 // Existing character — go to home
                 Helpers.EventBus.emit('navigate', 'home');
             } else {
