@@ -279,6 +279,12 @@ var GuildScreen = (function() {
                         } else {
                             Toast.success(t('guild_left'));
                             SoundManager.play('transition');
+                            // Optimistic update: remove player from guild locally
+                            var leaveState = StateEngine.getState();
+                            var leaveUser = VizAccount.getCurrentUser();
+                            if (leaveState.guilds && guild.id && leaveState.guilds[guild.id]) {
+                                GuildSystem.leaveGuild(leaveState.guilds[guild.id], leaveUser);
+                            }
                             render();
                         }
                     });
@@ -343,6 +349,13 @@ var GuildScreen = (function() {
                     } else {
                         Toast.success(t('guild_joined'));
                         SoundManager.play('success');
+                        // Optimistic update: add player to guild locally
+                        var state = StateEngine.getState();
+                        var user = VizAccount.getCurrentUser();
+                        var blockNum = state.headBlock || 0;
+                        if (state.guilds && state.guilds[guildId]) {
+                            GuildSystem.joinGuild(state.guilds[guildId], user, blockNum);
+                        }
                         render();
                     }
                 });
@@ -400,6 +413,16 @@ var GuildScreen = (function() {
                 } else {
                     Toast.success(t('guild_created'));
                     SoundManager.play('success');
+                    // Optimistic update: apply guild to local state immediately
+                    // (block-processor will confirm when the tx lands on-chain)
+                    var state = StateEngine.getState();
+                    if (!state.guilds) state.guilds = {};
+                    var user = VizAccount.getCurrentUser();
+                    var blockNum = state.headBlock || 0;
+                    var newGuild = GuildSystem.createGuild(guildId, user, {
+                        name: name, tag: tag, school: school, motto: motto, charter: {}
+                    }, blockNum);
+                    if (newGuild) state.guilds[guildId] = newGuild;
                     render();
                 }
             });
@@ -618,5 +641,22 @@ var GuildScreen = (function() {
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    return { render: render };
+    /**
+     * Initialize EventBus subscriptions for reactive guild state updates.
+     * Called once when the screen module loads.
+     */
+    function init() {
+        var events = ['guild_created', 'guild_joined', 'guild_left', 'guild_promoted'];
+        for (var i = 0; i < events.length; i++) {
+            Helpers.EventBus.on(events[i], function() {
+                // Re-render only if guild screen is currently visible
+                var container = Helpers.$('screen-guild');
+                if (container && !container.getAttribute('aria-hidden')) {
+                    render();
+                }
+            });
+        }
+    }
+
+    return { render: render, init: init };
 })();

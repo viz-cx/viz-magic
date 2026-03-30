@@ -29,6 +29,11 @@ var App = (function() {
             BattleNarrator.init();
         }
 
+        // Initialize guild screen EventBus subscriptions
+        if (typeof GuildScreen !== 'undefined' && GuildScreen.init) {
+            GuildScreen.init();
+        }
+
         // Initialize account system
         VizAccount.init();
 
