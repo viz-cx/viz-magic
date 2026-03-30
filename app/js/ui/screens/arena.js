@@ -151,14 +151,33 @@ var ArenaScreen = (function() {
         var container = el.querySelector('#arena-content');
         if (!container) return;
 
+        // Filter out challenges that are already accepted (in active state)
+        var state = StateEngine.getState();
+        var filtered = [];
+        for (var f = 0; f < challenges.length; f++) {
+            var ref = String(challenges[f].blockNum);
+            var alreadyActive = state.duels && state.duels.active && state.duels.active[ref];
+            var alreadyInHistory = false;
+            if (state.duels && state.duels.history) {
+                for (var h = 0; h < state.duels.history.length; h++) {
+                    if (state.duels.history[h].id === ref) { alreadyInHistory = true; break; }
+                }
+            }
+            if (!alreadyActive && !alreadyInHistory) {
+                filtered.push(challenges[f]);
+            }
+        }
+        if (filtered.length === 0) return;
+
         var html = '<div class="arena-incoming"><h2>' + (t('arena_incoming_challenges') || 'Входящие вызовы') + '</h2>';
-        for (var i = 0; i < challenges.length; i++) {
-            var ch = challenges[i];
+        for (var i = 0; i < filtered.length; i++) {
+            var ch = filtered[i];
             html += '<div class="arena-history-entry arena-pending">' +
                 '<strong>' + Helpers.escapeHtml(ch.challenger) + ' ' + (t('arena_challenges_you') || 'вызывает вас на дуэль!') + '</strong>' +
                 '<span> (блок ' + ch.blockNum + ')</span>' +
                 '<button class="btn btn-primary btn-sm arena-accept-chain-btn" ' +
-                    'data-combat-ref="' + ch.blockNum + '" data-opponent="' + ch.challenger + '">' +
+                    'data-combat-ref="' + ch.blockNum + '" data-opponent="' + ch.challenger + '" ' +
+                    'data-strategy-hash="' + (ch.strategyHash || '') + '">' +
                     (t('duel_accept') || 'Принять') + '</button>' +
                 '</div>';
         }
@@ -166,14 +185,20 @@ var ArenaScreen = (function() {
 
         container.insertAdjacentHTML('beforeend', html);
 
-        // Bind accept buttons
+        // Bind accept buttons — broadcast accept on chain, then navigate to duel
         var acceptBtns = container.querySelectorAll('.arena-accept-chain-btn');
         for (var j = 0; j < acceptBtns.length; j++) {
             acceptBtns[j].addEventListener('click', function() {
-                var ref = this.getAttribute('data-combat-ref');
-                var opp = this.getAttribute('data-opponent');
+                var btn = this;
+                var challengeRef = btn.getAttribute('data-combat-ref');
+                var opp = btn.getAttribute('data-opponent');
                 SoundManager.play('tap');
-                DuelScreen.startDuel(opp, ref, { source: 'arena_accept' });
+
+                btn.disabled = true;
+                btn.textContent = '...';
+
+                // Navigate to duel screen immediately with accept source
+                DuelScreen.startDuel(opp, challengeRef, { source: 'arena_accept' });
             });
         }
     }
@@ -329,13 +354,31 @@ var ArenaScreen = (function() {
 
         container.innerHTML = html;
 
-        // Bind continue buttons
-        var continueBtns = container.querySelectorAll('[data-combat-ref]');
+        // Bind continue buttons for active duels
+        var continueBtns = container.querySelectorAll('[data-combat-ref]:not(.arena-accept-btn)');
         for (var m = 0; m < continueBtns.length; m++) {
+            if (continueBtns[m].classList.contains('arena-accept-btn')) continue;
             continueBtns[m].addEventListener('click', function() {
                 var ref = this.getAttribute('data-combat-ref');
                 var opp = this.getAttribute('data-opponent');
                 DuelScreen.startDuel(opp, ref, { source: 'history' });
+            });
+        }
+
+        // Bind accept buttons for pending challenges (from state)
+        var stateAcceptBtns = container.querySelectorAll('.arena-accept-btn');
+        for (var n = 0; n < stateAcceptBtns.length; n++) {
+            stateAcceptBtns[n].addEventListener('click', function() {
+                var btn = this;
+                var ref = btn.getAttribute('data-combat-ref');
+                var opp = btn.getAttribute('data-opponent');
+                SoundManager.play('tap');
+
+                btn.disabled = true;
+                btn.textContent = '...';
+
+                // Navigate to duel screen with accept source
+                DuelScreen.startDuel(opp, ref, { source: 'arena_accept' });
             });
         }
     }

@@ -8,6 +8,10 @@ var App = (function() {
     var currentScreen = 'landing';
     var screens = ['landing', 'onboarding', 'login', 'home', 'character', 'hunt', 'inventory', 'chronicle', 'duel', 'arena', 'guild', 'map', 'marketplace', 'crafting', 'quests', 'world-boss', 'settings'];
     var initialized = false;
+    var _pollTimer = null;
+    var _lastPolledBlock = 0;
+    var _pollBusy = false;
+    var POLL_INTERVAL_MS = 3000;
 
     /**
      * Initialize the application
@@ -47,6 +51,9 @@ var App = (function() {
             // Initialize game state engine
             StateEngine.init(function(err, state) {
                 if (err) console.log('State engine init error:', err);
+
+                // Start block polling for real-time state sync
+                _startBlockPolling();
 
                 // Determine starting screen
                 if (VizAccount.isLoggedIn()) {
@@ -216,6 +223,104 @@ var App = (function() {
                 console.log('SW registration failed:', err);
             });
         }
+    }
+
+    /**
+     * Start periodic block polling for real-time state sync.
+     * Every POLL_INTERVAL_MS checks chain head and processes new blocks
+     * through BlockProcessor → StateEngine → checkpoint save.
+     */
+    function _startBlockPolling() {
+        if (_pollTimer) return;
+
+        var state = StateEngine.getState();
+        _lastPolledBlock = state.headBlock || 0;
+        console.log('App: Block polling started from block', _lastPolledBlock);
+
+        _pollTimer = setInterval(function() {
+            if (_pollBusy) return;
+            if (!VizConnection.isConnected()) return;
+
+            _pollBusy = true;
+            viz.api.getDynamicGlobalProperties(function(err, dgp) {
+                if (err || !dgp) {
+                    _pollBusy = false;
+                    return;
+                }
+
+                var headBlock = dgp.head_block_number;
+
+                // If we have no lastPolledBlock, start from recent history
+                // (last 200 blocks ~ 10 minutes) to catch duel actions
+                if (_lastPolledBlock === 0) {
+                    _lastPolledBlock = Math.max(1, headBlock - 200);
+                }
+
+                if (headBlock <= _lastPolledBlock) {
+                    _pollBusy = false;
+                    return;
+                }
+
+                // Cap batch size to avoid overwhelming the node
+                var startBlock = _lastPolledBlock + 1;
+                var maxBatch = 10;
+                var endBlock = Math.min(headBlock, startBlock + maxBatch - 1);
+
+                _processBlockBatch(startBlock, endBlock, headBlock);
+            });
+        }, POLL_INTERVAL_MS);
+    }
+
+    /**
+     * Process a batch of blocks sequentially, then save checkpoint.
+     */
+    function _processBlockBatch(startBlock, endBlock, chainHead) {
+        var eventsCollected = [];
+
+        BlockProcessor.processBlockRange(startBlock, endBlock, function(processed, blockNum) {
+            // Feed each processed block into StateEngine
+            var events = StateEngine.processBlock(processed);
+            for (var i = 0; i < events.length; i++) {
+                eventsCollected.push(events[i]);
+            }
+        }, function(err) {
+            _lastPolledBlock = endBlock;
+
+            // Emit game events to EventBus for UI reactivity
+            for (var i = 0; i < eventsCollected.length; i++) {
+                var evt = eventsCollected[i];
+                if (evt.type) {
+                    Helpers.EventBus.emit(evt.type, evt);
+                }
+            }
+
+            // Save checkpoint periodically (every batch)
+            StateEngine.saveCheckpoint(function(cpErr) {
+                if (cpErr) {
+                    console.log('App: Checkpoint save error:', cpErr);
+                }
+
+                // If there are more blocks to process, continue immediately
+                if (endBlock < chainHead) {
+                    var nextStart = endBlock + 1;
+                    var nextEnd = Math.min(chainHead, nextStart + 9);
+                    _processBlockBatch(nextStart, nextEnd, chainHead);
+                } else {
+                    _pollBusy = false;
+                }
+            });
+        });
+    }
+
+    /**
+     * Stop block polling (for cleanup)
+     */
+    function _stopBlockPolling() {
+        if (_pollTimer) {
+            clearInterval(_pollTimer);
+            _pollTimer = null;
+        }
+        _pollBusy = false;
     }
 
     /**

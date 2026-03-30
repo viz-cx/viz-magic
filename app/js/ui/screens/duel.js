@@ -7,7 +7,9 @@ var DuelScreen = (function() {
     'use strict';
 
     var SEAL_TIMER_SECONDS = 15;
+    var STATE_POLL_INTERVAL_MS = 3000;
     var registeredListeners = false;
+    var _statePollTimer = null;
 
     var duelState = _createInitialState();
 
@@ -48,6 +50,13 @@ var DuelScreen = (function() {
         _syncFromState();
         _ensureEventListeners();
 
+        // Manage state polling — active during waiting phase
+        if (duelState.phase === 'waiting') {
+            _startStatePoll();
+        } else {
+            _stopStatePoll();
+        }
+
         switch (duelState.phase) {
             case 'pre':
                 _renderPreDuel(el);
@@ -71,11 +80,19 @@ var DuelScreen = (function() {
     }
 
     function startDuel(opponent, combatRef, challengeData) {
+        _stopStatePoll();
         duelState = _createInitialState();
         duelState.opponent = opponent || '';
         duelState.combatRef = combatRef ? String(combatRef) : '';
         duelState.challengeData = challengeData || null;
         duelState.phase = 'pre';
+
+        // If this is an accept flow from arena, go directly to seal phase
+        if (challengeData && challengeData.source === 'arena_accept' && combatRef) {
+            duelState.phase = 'seal';
+            duelState.pendingAction = 'accept';
+        }
+
         Helpers.EventBus.emit('navigate', 'duel');
     }
 
@@ -266,7 +283,25 @@ var DuelScreen = (function() {
                 hash: hash
             };
 
-            if (duelState.combatRef && duelState.currentRound > 1) {
+            // Accept flow: broadcast accept with strategy hash
+            if (duelState.pendingAction === 'accept' && duelState.combatRef) {
+                DuelProtocol.acceptChallenge(
+                    duelState.combatRef,
+                    hash,
+                    100,
+                    function(err) {
+                        if (err) {
+                            duelState.errorKey = 'error_network';
+                            Toast.error(Helpers.t('error_network'));
+                            duelState.phase = 'pre';
+                            render();
+                            return;
+                        }
+                        duelState.pendingAction = '';
+                        _moveToWaiting('duel_waiting_resolution');
+                    }
+                );
+            } else if (duelState.combatRef && duelState.currentRound > 1) {
                 duelState.pendingAction = 'commit';
                 DuelProtocol.commitStrategy(
                     duelState.combatRef,
@@ -785,10 +820,20 @@ var DuelScreen = (function() {
             if (App.getCurrentScreen() === 'duel') render();
         });
 
+        Helpers.EventBus.on('duel_challenge', function(data) {
+            // When our own challenge is confirmed on chain, capture the combatRef
+            var user = VizAccount.getCurrentUser();
+            if (data.account === user && data.target === duelState.opponent && !duelState.combatRef) {
+                duelState.combatRef = String(data.challengeRef);
+                console.log('DuelScreen: Challenge confirmed, ref:', duelState.combatRef);
+            }
+        });
+
         Helpers.EventBus.on('duel_accepted', function(data) {
             if (duelState.opponent && (data.challenger === duelState.opponent || data.target === duelState.opponent)) {
                 duelState.combatRef = String(data.combatRef);
                 duelState.waitingMessageKey = 'duel_waiting_resolution';
+                _syncFromState();
                 if (App.getCurrentScreen() === 'duel') render();
             }
         });
@@ -798,6 +843,115 @@ var DuelScreen = (function() {
             _syncFromState();
             if (App.getCurrentScreen() === 'duel') render();
         });
+    }
+
+    /**
+     * Start polling duel state for opponent updates.
+     * Checks StateEngine world state every STATE_POLL_INTERVAL_MS
+     * for changes to the current duel (accept, commit, reveal, result).
+     */
+    function _startStatePoll() {
+        if (_statePollTimer) return;
+
+        var _prevStatus = '';
+        var _prevRound = 0;
+        var _prevPhase = duelState.phase;
+
+        // Capture initial state snapshot for comparison
+        var duel = _getCurrentDuel();
+        if (duel) {
+            _prevStatus = duel.status || '';
+            _prevRound = duel.currentRound || 0;
+        }
+
+        _statePollTimer = setInterval(function() {
+            if (App.getCurrentScreen() !== 'duel') {
+                _stopStatePoll();
+                return;
+            }
+
+            var currentDuel = _getCurrentDuel();
+            if (!currentDuel) return;
+
+            var changed = false;
+
+            // Check if duel status changed
+            if (currentDuel.status !== _prevStatus) {
+                _prevStatus = currentDuel.status;
+                changed = true;
+            }
+
+            // Check if round advanced
+            if (currentDuel.currentRound !== _prevRound) {
+                _prevRound = currentDuel.currentRound;
+                changed = true;
+            }
+
+            // Check if opponent committed or revealed
+            var user = VizAccount.getCurrentUser();
+            var oppCommitted = _hasOpponentCommitted(currentDuel, user, currentDuel.currentRound || 1);
+            if (oppCommitted && !duelState.opponentCommitted) {
+                duelState.opponentCommitted = true;
+                changed = true;
+            }
+
+            // Check for round results
+            if (currentDuel.roundResults && currentDuel.roundResults.length > duelState.roundResults.length) {
+                changed = true;
+            }
+
+            if (changed) {
+                var oldPhase = duelState.phase;
+                _syncFromState();
+
+                // If phase changed, re-render
+                if (duelState.phase !== oldPhase || changed) {
+                    render();
+                }
+            }
+        }, STATE_POLL_INTERVAL_MS);
+    }
+
+    /**
+     * Stop state polling.
+     */
+    function _stopStatePoll() {
+        if (_statePollTimer) {
+            clearInterval(_statePollTimer);
+            _statePollTimer = null;
+        }
+    }
+
+    /**
+     * Get current duel object from StateEngine world state.
+     */
+    function _getCurrentDuel() {
+        var state = StateEngine.getState();
+        if (!state || !state.duels) return null;
+
+        if (duelState.combatRef) {
+            if (state.duels.active && state.duels.active[duelState.combatRef]) {
+                return state.duels.active[duelState.combatRef];
+            }
+            if (state.duels.pending && state.duels.pending[duelState.combatRef]) {
+                return state.duels.pending[duelState.combatRef];
+            }
+            // Check history for completed duels
+            if (state.duels.history) {
+                for (var i = 0; i < state.duels.history.length; i++) {
+                    if (state.duels.history[i].id === duelState.combatRef) {
+                        return state.duels.history[i];
+                    }
+                }
+            }
+        }
+
+        // Try finding by opponent
+        if (duelState.opponent) {
+            return _findRelatedDuel(state, duelState.opponent);
+        }
+
+        return null;
     }
 
     function _getPlayerStats(account) {
@@ -860,6 +1014,7 @@ var DuelScreen = (function() {
     Helpers.EventBus.on('navigate', function(screen) {
         if (screen !== 'duel') {
             _clearSealTimer();
+            _stopStatePoll();
         }
     });
 
