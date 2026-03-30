@@ -65,3 +65,6 @@ var ModalComponent = (function() {
 
     return { show: show, hide: hide };
 })();
+
+// Convenience alias used across all screen modules
+var Modal = ModalComponent;

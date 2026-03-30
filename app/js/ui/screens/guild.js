@@ -379,7 +379,7 @@ var GuildScreen = (function() {
         html += '</div>';
         html += '</div>';
 
-        Modal.show(html);
+        ModalComponent.show(html);
 
         Helpers.$('modal-create-guild').addEventListener('click', function() {
             var guildId = Helpers.$('guild-id').value.trim().toLowerCase();
@@ -394,7 +394,7 @@ var GuildScreen = (function() {
             }
 
             GuildProtocol.broadcastCreateGuild(guildId, name, tag, school, motto, {}, function(err) {
-                Modal.hide();
+                ModalComponent.hide();
                 if (err) {
                     Toast.error(t('error_network'));
                 } else {
@@ -406,7 +406,7 @@ var GuildScreen = (function() {
         });
 
         Helpers.$('modal-cancel').addEventListener('click', function() {
-            Modal.hide();
+            ModalComponent.hide();
         });
     }
 
@@ -424,13 +424,13 @@ var GuildScreen = (function() {
         html += '</div>';
         html += '</div>';
 
-        Modal.show(html);
+        ModalComponent.show(html);
 
         Helpers.$('modal-recruit').addEventListener('click', function() {
             var target = Helpers.$('recruit-target').value.trim().toLowerCase();
             if (!target) return;
             GuildProtocol.broadcastInviteToGuild(guild.id, target, function(err) {
-                Modal.hide();
+                ModalComponent.hide();
                 if (err) {
                     Toast.error(t('error_network'));
                 } else {
@@ -440,7 +440,7 @@ var GuildScreen = (function() {
             });
         });
 
-        Helpers.$('modal-cancel').addEventListener('click', function() { Modal.hide(); });
+        Helpers.$('modal-cancel').addEventListener('click', function() { ModalComponent.hide(); });
     }
 
     /**
@@ -519,7 +519,7 @@ var GuildScreen = (function() {
         html += '</div>';
         html += '</div>';
 
-        Modal.show(html);
+        ModalComponent.show(html);
 
         Helpers.$('modal-patronage').addEventListener('click', function() {
             var target = Helpers.$('patronage-target').value.trim().toLowerCase();
@@ -528,7 +528,7 @@ var GuildScreen = (function() {
 
             if (typeof VizBroadcast.delegateShares === 'function') {
                 VizBroadcast.delegateShares(target, shares, function(err) {
-                    Modal.hide();
+                    ModalComponent.hide();
                     if (err) {
                         Toast.error(t('guild_patronage_error'));
                     } else {
@@ -537,12 +537,12 @@ var GuildScreen = (function() {
                     }
                 });
             } else {
-                Modal.hide();
+                ModalComponent.hide();
                 Toast.error(t('guild_patronage_no_active_key'));
             }
         });
 
-        Helpers.$('modal-cancel').addEventListener('click', function() { Modal.hide(); });
+        Helpers.$('modal-cancel').addEventListener('click', function() { ModalComponent.hide(); });
     }
 
     /**
@@ -564,12 +564,12 @@ var GuildScreen = (function() {
         html += '</div>';
         html += '</div>';
 
-        Modal.show(html);
+        ModalComponent.show(html);
 
         Helpers.$('modal-promote').addEventListener('click', function() {
             var rank = Helpers.$('promote-rank').value;
             GuildProtocol.broadcastPromote(guild.id, targetAccount, rank, function(err) {
-                Modal.hide();
+                ModalComponent.hide();
                 if (err) {
                     Toast.error(t('error_network'));
                 } else {
@@ -580,7 +580,7 @@ var GuildScreen = (function() {
             });
         });
 
-        Helpers.$('modal-cancel').addEventListener('click', function() { Modal.hide(); });
+        Helpers.$('modal-cancel').addEventListener('click', function() { ModalComponent.hide(); });
     }
 
     /**
@@ -598,8 +598,8 @@ var GuildScreen = (function() {
         html += '</div>';
         html += '</div>';
 
-        Modal.show(html);
-        Helpers.$('modal-cancel').addEventListener('click', function() { Modal.hide(); });
+        ModalComponent.show(html);
+        Helpers.$('modal-cancel').addEventListener('click', function() { ModalComponent.hide(); });
     }
 
     /**
