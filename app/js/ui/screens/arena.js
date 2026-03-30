@@ -64,6 +64,118 @@ var ArenaScreen = (function() {
         } else {
             _renderHistory(content);
         }
+
+        // Scan chain for incoming challenges addressed to current user
+        _scanIncomingChallenges(el);
+    }
+
+    /**
+     * Scan recent VM operations to find challenges targeting the current user.
+     * Uses custom_protocol_api to walk backward through challenger's VM chain.
+     */
+    function _scanIncomingChallenges(el) {
+        var user = VizAccount.getCurrentUser();
+        if (!user) return;
+
+        var state = StateEngine.getState();
+        // Check if we already have pending duels in state
+        if (state.duels && state.duels.pending) {
+            var found = false;
+            for (var key in state.duels.pending) {
+                if (state.duels.pending[key].target === user) { found = true; break; }
+            }
+            if (found) return; // Already have pending challenges loaded
+        }
+
+        // Fetch recent blocks to look for challenges targeting this user
+        viz.api.getDynamicGlobalProperties(function(err, dgp) {
+            if (err || !dgp) return;
+            var headBlock = dgp.head_block_number;
+            // Scan last 100 blocks (~5 minutes) for fast check
+            var startBlock = Math.max(1, headBlock - 100);
+            _scanBlocksForChallenges(startBlock, headBlock, user, el);
+        });
+    }
+
+    function _scanBlocksForChallenges(startBlock, endBlock, user, el) {
+        var pendingChallenges = [];
+        var current = endBlock;
+
+        function checkBlock() {
+            if (current < startBlock) {
+                // Done scanning
+                if (pendingChallenges.length > 0) {
+                    _showIncomingChallenges(pendingChallenges, el, user);
+                }
+                return;
+            }
+
+            viz.api.getBlock(current, function(err, block) {
+                if (!err && block && block.transactions) {
+                    for (var i = 0; i < block.transactions.length; i++) {
+                        var tx = block.transactions[i];
+                        for (var j = 0; j < tx.operations.length; j++) {
+                            var op = tx.operations[j];
+                            if (op[0] === 'custom' && op[1].id === 'VM') {
+                                try {
+                                    var data = JSON.parse(op[1].json);
+                                    if (data.t === 'challenge' && data.d && data.d.target === user) {
+                                        var challenger = (op[1].required_regular_auths && op[1].required_regular_auths[0]) || '';
+                                        pendingChallenges.push({
+                                            challenger: challenger,
+                                            blockNum: current,
+                                            data: data.d,
+                                            strategyHash: data.d.strategy_hash
+                                        });
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    }
+                }
+                current--;
+                // Batch: check 10 blocks then yield
+                if ((endBlock - current) % 10 === 0) {
+                    setTimeout(checkBlock, 50);
+                } else {
+                    checkBlock();
+                }
+            });
+        }
+
+        checkBlock();
+    }
+
+    function _showIncomingChallenges(challenges, el, user) {
+        var t = Helpers.t;
+        var container = el.querySelector('#arena-content');
+        if (!container) return;
+
+        var html = '<div class="arena-incoming"><h2>' + (t('arena_incoming_challenges') || 'Входящие вызовы') + '</h2>';
+        for (var i = 0; i < challenges.length; i++) {
+            var ch = challenges[i];
+            html += '<div class="arena-history-entry arena-pending">' +
+                '<strong>' + Helpers.escapeHtml(ch.challenger) + ' ' + (t('arena_challenges_you') || 'вызывает вас на дуэль!') + '</strong>' +
+                '<span> (блок ' + ch.blockNum + ')</span>' +
+                '<button class="btn btn-primary btn-sm arena-accept-chain-btn" ' +
+                    'data-combat-ref="' + ch.blockNum + '" data-opponent="' + ch.challenger + '">' +
+                    (t('duel_accept') || 'Принять') + '</button>' +
+                '</div>';
+        }
+        html += '</div>';
+
+        container.insertAdjacentHTML('beforeend', html);
+
+        // Bind accept buttons
+        var acceptBtns = container.querySelectorAll('.arena-accept-chain-btn');
+        for (var j = 0; j < acceptBtns.length; j++) {
+            acceptBtns[j].addEventListener('click', function() {
+                var ref = this.getAttribute('data-combat-ref');
+                var opp = this.getAttribute('data-opponent');
+                SoundManager.play('tap');
+                DuelScreen.startDuel(opp, ref, { source: 'arena_accept' });
+            });
+        }
     }
 
     function _renderLeaderboard(container) {

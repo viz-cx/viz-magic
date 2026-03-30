@@ -142,6 +142,7 @@ var LangRU = {
     hunt_loot: 'Добыча',
     hunt_damage_dealt: 'Нанесено урона',
     hunt_damage_taken: 'Получено урона',
+    arena_incoming_challenges: 'Входящие вызовы',
     hunt_again: 'Охотиться снова',
     hunt_home: 'Домой',
     hunt_equip_now: 'Экипировать сейчас',

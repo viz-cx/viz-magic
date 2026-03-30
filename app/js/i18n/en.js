@@ -142,6 +142,7 @@ var LangEN = {
     hunt_loot: 'Loot',
     hunt_damage_dealt: 'Damage dealt',
     hunt_damage_taken: 'Damage taken',
+    arena_incoming_challenges: 'Incoming Challenges',
     hunt_again: 'Hunt again',
     hunt_home: 'Home',
     hunt_equip_now: 'Equip now',
