@@ -141,6 +141,14 @@ var GuildScreen = (function() {
             if (member.delegatedShares > 0) {
                 html += '<span class="member-delegation">' + _formatShares(member.delegatedShares) + '</span>';
             }
+            if (member.account !== user) {
+                // Delegate button — available to all officers for any non-self member
+                html += ' <button class="btn btn-sm btn-secondary guild-delegate-btn" ';
+                html += 'data-account="' + member.account + '" ';
+                html += 'aria-label="' + t('guild_patronage_delegate') + ' ' + member.account + '">';
+                html += '🤝';
+                html += '</button>';
+            }
             if (isOfficer && member.rank !== GuildSystem.RANKS.FOUNDER && member.account !== user) {
                 html += ' <button class="btn btn-sm btn-secondary guild-promote-btn" ';
                 html += 'data-account="' + member.account + '" ';
@@ -300,11 +308,20 @@ var GuildScreen = (function() {
             });
         }
 
-        // Patronage button
+        // Patronage button (general)
         var patronageBtn = container.querySelector('#btn-guild-patronage');
         if (patronageBtn) {
             patronageBtn.addEventListener('click', function() {
                 _showPatronageModal(guild, user);
+            });
+        }
+
+        // Quick-delegate buttons on each member row
+        var delegateBtns = container.querySelectorAll('.guild-delegate-btn');
+        for (var di = 0; di < delegateBtns.length; di++) {
+            delegateBtns[di].addEventListener('click', function() {
+                var account = this.getAttribute('data-account');
+                _showPatronageModal(guild, user, account);
             });
         }
 
@@ -525,14 +542,18 @@ var GuildScreen = (function() {
     }
 
     /**
-     * Show patronage modal (delegate SHARES to new member)
+     * Show patronage modal (delegate SHARES to a member)
+     * @param {Object} guild
+     * @param {string} user - current user
+     * @param {string} [prefillAccount] - optional account to pre-fill in the target field
      */
-    function _showPatronageModal(guild, user) {
+    function _showPatronageModal(guild, user, prefillAccount) {
         var html = '<div class="modal-content">';
         html += '<h2 class="modal-title">' + t('guild_patronage') + '</h2>';
         html += '<p>' + t('guild_patronage_desc') + '</p>';
         html += '<label class="input-label" for="patronage-target">' + t('guild_patronage_target') + '</label>';
-        html += '<input type="text" class="input-field" id="patronage-target" placeholder="account-name">';
+        html += '<input type="text" class="input-field" id="patronage-target" placeholder="account-name"'
+              + (prefillAccount ? ' value="' + _esc(prefillAccount) + '"' : '') + '>';
         html += '<label class="input-label" for="patronage-shares">' + t('guild_patronage_amount') + '</label>';
         html += '<input type="number" class="input-field" id="patronage-shares" min="1" placeholder="1000">';
         html += '<p class="input-feedback">' + t('guild_patronage_note') + '</p>';
