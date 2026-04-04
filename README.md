@@ -45,6 +45,7 @@ The game uses three protocols on VIZ custom operations:
 - **5 magic schools**: Ignis, Aqua, Terra, Ventus, Umbra with a dominance wheel
 - **PvE**: Hunt creatures across zones, earn XP and loot
 - **PvP**: Commit-reveal duels (strike/guard/weave/mend), best of 3, with auto-mode
+- **Armageddon**: Spend 100% mana for 100× XP — requires a rare Armageddon Stone artifact (drops from Thornvine Lv5+, or craft from Echo Shards × 3 + Shadow Shard × 3 + Fire Dust × 5 at level 10). Full confirmation flow protects against accidental use. Each use is recorded on-chain for verifiable authenticity.
 - **Crafting**: Combine materials into equipment
 - **Marketplace**: List, buy, and trade items on-chain
 - **Guilds**: Create guilds, declare wars, siege territories
@@ -53,6 +54,7 @@ The game uses three protocols on VIZ custom operations:
 - **Items**: 5 rarity tiers (Common → Legendary)
 - **Realm Chronicle**: Social posts via the Voice protocol
 - **Leveling**: XP system with soft cap at level 50
+- **Mana display**: Shown as a percentage (0.00%–100.00%) across all UI screens; internal blockchain values remain in basis points (0–10000)
 - **i18n**: Full Russian and English support
 - **Accessibility**: WCAG 2.1, screen reader support, keyboard navigation
 - **PWA**: Installable, works offline
