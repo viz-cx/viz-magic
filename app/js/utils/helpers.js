@@ -165,6 +165,16 @@ var Helpers = (function() {
     }
 
     /**
+     * Convert mana basis points (0–10000) to display percent string
+     * Example: 100 → "1.00%", 5000 → "50.00%", 10000 → "100.00%"
+     * @param {number} bp - energy in basis points
+     * @returns {string}
+     */
+    function bpToPercent(bp) {
+        return (bp / 100).toFixed(2) + '%';
+    }
+
+    /**
      * Get rarity color class
      */
     function rarityClass(rarity) {
@@ -213,6 +223,7 @@ var Helpers = (function() {
         debounce: debounce,
         escapeHtml: escapeHtml,
         isValidAccountName: isValidAccountName,
+        bpToPercent: bpToPercent,
         rarityClass: rarityClass,
         classIcon: classIcon,
         schoolColor: schoolColor

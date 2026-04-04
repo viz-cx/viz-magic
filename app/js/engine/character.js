@@ -94,6 +94,7 @@ var CharacterSystem = (function() {
             account: account,
             name: displayName,
             className: className,
+            school: classDef.school,
             level: 1,
             xp: 0,
             hp: classDef.baseHp,

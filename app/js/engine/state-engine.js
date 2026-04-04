@@ -312,6 +312,7 @@ var StateEngine = (function() {
 
         worldState.characters[sender] = character;
         worldState.inventories[sender] = [];
+        worldState.quests[sender] = worldState.quests[sender] || _createDefaultQuestState();
 
         // Give starter equipment based on class
         var starterItems = _getStarterItems(data.class, sender, blockNum);

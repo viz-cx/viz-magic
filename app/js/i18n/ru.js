@@ -112,6 +112,7 @@ var LangRU = {
     char_fortune: 'Удача',
     char_core: 'Магическое Ядро',
     char_core_power: 'Сила Ядра',
+    char_core_per_stat: 'Сила Ядра / 5: +{value} к каждому основному стату',
     char_mana_regen: 'Регенерация Маны',
     char_spells: 'Заклинания',
 
@@ -146,7 +147,7 @@ var LangRU = {
     hunt_again: 'Охотиться снова',
     hunt_home: 'Домой',
     hunt_equip_now: 'Экипировать сейчас',
-    hunt_mana_cost: 'Стоит {cost} Маны',
+    hunt_mana_cost: 'Стоит {cost} маны',
     hunt_not_enough_mana: 'Маны мало. Подожди восстановления.',
 
     // Inventory

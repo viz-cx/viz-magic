@@ -85,6 +85,13 @@ var App = (function() {
                                         character.hp = GameFormulas.calculateMaxHp(character.className, character.level, CharacterSystem.getTotalStat(character, 'res'));
                                         character.maxHp = character.hp;
                                     }
+
+                                    // Sync Magic Core from on-chain SHARES with heavy compression.
+                                    // This keeps SHARES meaningful but prevents whales from becoming unbeatable.
+                                    var effectiveShares = VizAccount.getEffectiveShares(accountData);
+                                    var cappedShares = Math.min(effectiveShares, 1000000000000); // cap at 1,000,000 SHARES (6 decimals)
+                                    CharacterSystem.updateCoreBonus(character, cappedShares);
+
                                     state.characters[user] = character;
                                 }
                             } else {

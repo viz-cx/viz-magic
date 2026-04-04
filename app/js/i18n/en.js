@@ -112,6 +112,7 @@ var LangEN = {
     char_fortune: 'Fortune',
     char_core: 'Magic Core',
     char_core_power: 'Core Power',
+    char_core_per_stat: 'Core Power / 5: +{value} to each main stat',
     char_mana_regen: 'Mana Regeneration',
     char_spells: 'Spells',
 

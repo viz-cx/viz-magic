@@ -230,8 +230,10 @@ var DuelStateManager = (function() {
 
         var playerA = {
             account: duel.challenger,
-            potency: charA.stats ? (charA.stats.pot || 10) : 10,
-            resilience: charA.stats ? (charA.stats.res || 5) : 5,
+            potency: (typeof CharacterSystem !== 'undefined' && CharacterSystem.getTotalStat)
+                ? CharacterSystem.getTotalStat(charA, 'pot') : (charA.pot || 10),
+            resilience: (typeof CharacterSystem !== 'undefined' && CharacterSystem.getTotalStat)
+                ? CharacterSystem.getTotalStat(charA, 'res') : (charA.res || 5),
             level: charA.level || 1,
             school: charA.school || '',
             strategy: stratA
@@ -239,8 +241,10 @@ var DuelStateManager = (function() {
 
         var playerB = {
             account: duel.target,
-            potency: charB.stats ? (charB.stats.pot || 10) : 10,
-            resilience: charB.stats ? (charB.stats.res || 5) : 5,
+            potency: (typeof CharacterSystem !== 'undefined' && CharacterSystem.getTotalStat)
+                ? CharacterSystem.getTotalStat(charB, 'pot') : (charB.pot || 10),
+            resilience: (typeof CharacterSystem !== 'undefined' && CharacterSystem.getTotalStat)
+                ? CharacterSystem.getTotalStat(charB, 'res') : (charB.res || 5),
             level: charB.level || 1,
             school: charB.school || '',
             strategy: stratB

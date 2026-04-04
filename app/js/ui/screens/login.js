@@ -109,10 +109,17 @@ var LoginScreen = (function() {
                             character.hp = GameFormulas.calculateMaxHp(character.className, character.level, CharacterSystem.getTotalStat(character, 'res'));
                             character.maxHp = character.hp;
                         }
+
+                        // Sync Magic Core from on-chain SHARES with heavy compression.
+                        // This keeps SHARES meaningful but prevents whales from becoming unbeatable.
+                        var effectiveShares = VizAccount.getEffectiveShares(accountData);
+                        var cappedShares = Math.min(effectiveShares, 1000000000000); // cap at 1,000,000 SHARES (6 decimals)
+                        CharacterSystem.updateCoreBonus(character, cappedShares);
+
                         state.characters[account] = character;
                         state.inventories[account] = state.inventories[account] || [];
                         state.quests[account] = state.quests[account] || (typeof QuestSystem !== 'undefined' ? QuestSystem.createPlayerQuestState() : {});
-                        console.log('Character restored from grimoire (login):', grimoire.name, grimoire.class, 'Lv' + character.level, 'XP:' + character.xp);
+                        console.log('Character restored from grimoire (login):', grimoire.name, grimoire.class, 'Lv' + character.level, 'XP:' + character.xp, 'Core:' + character.coreBonus);
                     }
                 } else {
                     console.log('Character already in state from checkpoint, keeping checkpoint data');

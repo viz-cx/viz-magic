@@ -24,7 +24,7 @@ var GameSpells = (function() {
             name: 'Stone Fist',
             school: 'terra',
             className: 'stonewarden',
-            manaCost: 1000,      // 10% energy
+            manaCost: 100,       // 100 energy out of 10000 = 1%
             levelReq: 1,
             multiplier: 1000,    // 1.0x + 10% RES bonus
             intent: 'strike',

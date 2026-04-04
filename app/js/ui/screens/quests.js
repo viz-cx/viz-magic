@@ -142,7 +142,7 @@ var QuestsScreen = (function() {
             html += '<div class="quest-rewards">' +
                 '<span class="reward-xp">\u2B50 ' + (prophecy.rewards.xp || 0) + ' XP</span>';
             if (prophecy.rewards.awardEnergy) {
-                html += ' <span class="reward-energy">\u26A1 ' + prophecy.rewards.awardEnergy + ' ' + t('home_mana') + '</span>';
+                html += ' <span class="reward-energy">\u26A1 ' + Helpers.bpToPercent(prophecy.rewards.awardEnergy) + ' ' + t('home_mana') + '</span>';
             }
             html += '</div>';
         }
@@ -237,7 +237,7 @@ var QuestsScreen = (function() {
             html += '<div class="quest-rewards">';
             html += '<span class="reward-xp">\u2B50 ' + quest.rewards.xp + ' XP</span>';
             if (quest.rewards.awardEnergy) {
-                html += ' <span class="reward-energy">\u26A1 ' + quest.rewards.awardEnergy + '</span>';
+                html += ' <span class="reward-energy">\u26A1 ' + Helpers.bpToPercent(quest.rewards.awardEnergy) + ' ' + Helpers.t('home_mana') + '</span>';
             }
             html += '</div>';
         }

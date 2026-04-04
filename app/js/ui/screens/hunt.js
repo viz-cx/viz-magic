@@ -49,10 +49,10 @@ var HuntScreen = (function() {
         for (var j = 0; j < spells.length; j++) {
             var s = spells[j];
             html += '<button class="spell-btn" data-id="' + s.id + '" role="radio" aria-checked="false" ' +
-                'aria-label="' + s.name + '. ' + t('hunt_mana_cost', {cost: Math.floor(s.manaCost/100)}) + '" ' +
+                'aria-label="' + s.name + '. ' + t('hunt_mana_cost', {cost: Helpers.bpToPercent(s.manaCost)}) + '" ' +
                 'style="border-color:' + Helpers.schoolColor(s.school) + '">' +
                 '<span class="spell-name">' + s.name + '</span>' +
-                '<span class="spell-cost">' + Math.floor(s.manaCost/100) + '% MP</span>' +
+                '<span class="spell-cost">' + Helpers.bpToPercent(s.manaCost) + ' ' + t('home_mana') + '</span>' +
                 '</button>';
         }
 
