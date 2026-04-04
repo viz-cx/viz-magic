@@ -341,30 +341,39 @@ var HuntScreen = (function() {
         var _doResolve = function(fateEntropy, finalBlockNum) {
             console.log('Hunt resolving with Fate Entropy (witness_signature):', fateEntropy.substring(0, 32) + '..., block:', finalBlockNum);
 
-            var result = CombatSystem.resolveHunt(ch, creature, spell, fateEntropy, finalBlockNum, playerEnergy);
-
-            // Apply results to local state
-            var state = StateEngine.getState();
-            if (result.victory) {
-                CharacterSystem.addXp(ch, result.xpGained);
-                if (!state.inventories[user]) state.inventories[user] = [];
-                for (var li = 0; li < result.loot.length; li++) {
-                    var lootItem = ItemSystem.createItem(
-                        result.loot[li].type, user, result.loot[li].rarity, finalBlockNum, '', true
-                    );
-                    state.inventories[user].push(lootItem);
-                }
-                if (typeof QuestSystem !== 'undefined' && state.quests && state.quests[user]) {
-                    QuestSystem.updateQuestProgress(state.quests[user], 'hunt', { target: selectedCreature, count: 1 });
-                }
-            } else {
-                // Defeat: partial XP (25%)
-                var defeatXp = Math.floor(GameFormulas.huntXp(ch.level, result.creatureLevel, creature.baseXp || 50) / 4);
-                if (defeatXp > 0) CharacterSystem.addXp(ch, defeatXp);
+            // Route through state-engine — single authoritative path for all item creation
+            var result = StateEngine.processHuntResult(user, selectedCreature, selectedSpell, fateEntropy, finalBlockNum, playerEnergy);
+            if (!result) {
+                resultEl.innerHTML = '<p class="error">' + t('error_network') + '</p>';
+                return;
             }
 
-            ch.hp = result.hpRemaining;
-            if (ch.hp <= 0) ch.hp = 0;
+            // ch is a reference to the same object in worldState — already updated by processHuntResult
+            var state = StateEngine.getState();
+
+            // Record armageddon_stone drops on-chain for verifiability
+            if (result.victory && result.loot) {
+                for (var li = 0; li < result.loot.length; li++) {
+                    if (result.loot[li].type === 'armageddon_stone') {
+                        (function(lootItem) {
+                            VizBroadcast.gameAction({
+                                t: 'loot.acquire',
+                                d: {
+                                    item: 'armageddon_stone',
+                                    item_id: lootItem.itemId || '',
+                                    hunt_block: finalBlockNum
+                                }
+                            }, function(err) {
+                                if (err) {
+                                    console.log('loot.acquire broadcast failed (non-fatal):', err);
+                                } else {
+                                    console.log('armageddon_stone recorded on-chain');
+                                }
+                            });
+                        })(result.loot[li]);
+                    }
+                }
+            }
 
             // Update head block in state
             state.headBlock = finalBlockNum;

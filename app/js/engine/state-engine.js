@@ -289,6 +289,11 @@ var StateEngine = (function() {
             case AT.LOC_CREATE:
                 events = events.concat(_handleLocCreate(sender, action.data, blockNum));
                 break;
+
+            // --- On-chain loot proof ---
+            case 'loot.acquire':
+                events = events.concat(_handleLootAcquire(sender, action.data, blockNum));
+                break;
         }
 
         // Add to recent actions
@@ -861,6 +866,77 @@ var StateEngine = (function() {
     }
 
     /**
+     * Handle loot.acquire — on-chain proof of item drop.
+     * During live play the item is already in inventory (added by processHuntResult).
+     * During replay this action is a no-op (item was added by _handleHunt).
+     * Its sole purpose: create a verifiable on-chain record of legitimate drops.
+     */
+    function _handleLootAcquire(sender, data, blockNum) {
+        // No-op for replay — item already created by _handleHunt.
+        // Just emit the event for chronicle/audit trail.
+        return [{
+            type: 'loot_acquired',
+            account: sender,
+            itemType: data.item,
+            itemId: data.item_id || '',
+            huntBlock: data.hunt_block || blockNum
+        }];
+    }
+
+    /**
+     * Process a hunt action directly (for live UI — bypasses block replay).
+     * Adds XP, loot, quest progress identically to _handleHunt.
+     * @param {string} account - player account
+     * @param {string} creatureId
+     * @param {string} spellId
+     * @param {string} blockHash - witness_signature as fate entropy
+     * @param {number} blockNum
+     * @param {number} playerEnergy - actual energy from chain (0-10000)
+     * @returns {Object|null} result with {victory, xpGained, loot, hpRemaining, creatureLevel, critical, damageDealt, damageTaken, levelsGained}
+     */
+    function processHuntResult(account, creatureId, spellId, blockHash, blockNum, playerEnergy) {
+        var character = worldState.characters[account];
+        if (!character) return null;
+        var creature = GameCreatures.getCreature(creatureId);
+        var spell = GameSpells.getSpell(spellId);
+        if (!creature || !spell) return null;
+
+        var result = CombatSystem.resolveHunt(character, creature, spell, blockHash, blockNum, playerEnergy);
+
+        if (result.victory) {
+            var xpResult = CharacterSystem.addXp(character, result.xpGained);
+            result.levelsGained = xpResult ? (xpResult.levelsGained || 0) : 0;
+            if (!worldState.inventories[account]) worldState.inventories[account] = [];
+            for (var i = 0; i < result.loot.length; i++) {
+                var lootItem = ItemSystem.createItem(
+                    result.loot[i].type, account, result.loot[i].rarity, blockNum, '', true
+                );
+                worldState.inventories[account].push(lootItem);
+                result.loot[i].itemId = lootItem.id;
+            }
+            if (typeof QuestSystem !== 'undefined' && worldState.quests && worldState.quests[account]) {
+                QuestSystem.updateQuestProgress(worldState.quests[account], 'hunt', { target: creatureId, count: 1 });
+            }
+        } else {
+            var defeatXp = Math.floor(GameFormulas.huntXp(character.level, result.creatureLevel, creature.baseXp || 50) / 4);
+            if (defeatXp > 0) {
+                var defeatXpResult = CharacterSystem.addXp(character, defeatXp);
+                result.xpGained = defeatXp;
+                result.levelsGained = defeatXpResult ? (defeatXpResult.levelsGained || 0) : 0;
+            }
+        }
+
+        character.hp = result.hpRemaining;
+        if (character.hp <= 0) {
+            character.hp = 0;
+            character.fallenUntilBlock = blockNum + (cfg.BLOCK ? cfg.BLOCK.FALLEN_DURATION : 14400);
+        }
+        character.lastHuntBlock = blockNum;
+
+        return result;
+    }
+
+    /**
      * Reset state (for testing)
      */
     function reset() {
@@ -874,6 +950,7 @@ var StateEngine = (function() {
         getState: getState,
         getCharacter: getCharacter,
         getInventory: getInventory,
+        processHuntResult: processHuntResult,
         reset: reset
     };
 })();
