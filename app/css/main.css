@@ -1154,4 +1154,56 @@ body {
     .quests-screen { max-width: 560px; }
     .boss-screen { max-width: 560px; }
     .settings-screen { max-width: 560px; }
+    .help-screen { max-width: 640px; }
+}
+
+/* ===== Help Screen ===== */
+.help-screen {
+    padding: 16px;
+    max-width: 640px;
+    margin: 0 auto;
+}
+.help-screen h1 {
+    margin-bottom: 8px;
+}
+.help-intro {
+    color: var(--color-text-muted, #8b949e);
+    margin-bottom: 24px;
+    font-size: 0.95em;
+}
+.help-section {
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    background: var(--color-surface, #161b22);
+    border-radius: 8px;
+    border-left: 3px solid var(--color-accent, #f0c040);
+}
+.help-section h2 {
+    font-size: 1em;
+    margin: 0 0 6px 0;
+    color: var(--color-accent, #f0c040);
+}
+.help-section p {
+    margin: 0;
+    font-size: 0.9em;
+    line-height: 1.5;
+    color: var(--color-text, #e6edf3);
+}
+
+/* Tooltip / hint button */
+.help-tip-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85em;
+    padding: 0 4px;
+    vertical-align: middle;
+    opacity: 0.7;
+    line-height: 1;
+}
+.help-tip-btn:hover,
+.help-tip-btn:focus {
+    opacity: 1;
+    outline: 2px solid var(--color-accent, #f0c040);
+    border-radius: 50%;
 }

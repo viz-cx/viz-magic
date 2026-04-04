@@ -76,7 +76,11 @@ var HuntScreen = (function() {
         }
 
         var armageddonSectionHtml = '<div class="armageddon-section" style="margin-top:24px;border:2px solid #c0392b;border-radius:8px;padding:16px;">' +
-            '<h2 style="color:#c0392b;">&#9888;&#65039; ' + t('hunt_armageddon_title') + ' !!!</h2>' +
+            '<h2 style="color:#c0392b;">&#9888;&#65039; ' + t('hunt_armageddon_title') + ' !!!' +
+            '<button class="help-tip-btn" aria-label="' + t('help_tip_armageddon') + '" ' +
+            'title="' + t('help_tip_armageddon') + '" ' +
+            'onclick="Helpers.EventBus.emit(\'navigate\', \'help\')">❓</button>' +
+            '</h2>' +
             '<p>' + t('hunt_armageddon_desc') + '</p>';
 
         if (!hasStone) {

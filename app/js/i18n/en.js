@@ -787,6 +787,39 @@ var LangEN = {
     settings_about_desc: 'Viz Magic — a browser RPG on the VIZ blockchain. Every action is recorded forever.',
     settings_realm_magic: 'About the Realm\'s Magic',
     settings_realm_magic_desc: 'All actions in Viz Magic are recorded on the VIZ blockchain. This means your progress is indestructible and the economy is transparent and fair. Your Magic Core is your stake in the VIZ network, powering your spells.',
-    settings_realm_archives: 'Realm Archives'
+    settings_realm_archives: 'Realm Archives',
+
+    // Help screen
+    nav_help: 'Guide',
+    help_title: 'Game Guide',
+    help_intro: 'Viz Magic is a browser RPG on the VIZ blockchain. Every action — hunt, craft, trade — is permanently recorded on-chain.',
+
+    help_section_mana: 'Mana',
+    help_mana_text: 'Mana is your energy (0–100%). Every spell costs mana. Full regeneration takes ~5 days. Shown as a percentage — 1.00% = 100 basis points on the blockchain.',
+
+    help_section_hunt: 'Hunting',
+    help_hunt_text: 'Choose a creature and a spell, then attack. Victory earns XP and loot. Defeat gives 25% XP. Loot is volatile — bank it in a safe zone to keep it.',
+
+    help_section_armageddon: 'Armageddon',
+    help_armageddon_text: 'Spend 100% mana for 100× the XP of a standard 1% hit. Requires an Armageddon Stone artifact. Drop: Thornvine (Lv5+, 0.5% chance). Craft: Echo Shards ×3 + Shadow Shard ×3 + Fire Dust ×5 at level 10 (costs 5% mana). Confirm the checkbox before launching — mana takes ~5 days to recover.',
+
+    help_section_crafting: 'Crafting',
+    help_crafting_text: 'Open the Crafting screen, pick a recipe and tap Craft. Materials are consumed. Quality depends on your INT stat and block entropy.',
+
+    help_section_marketplace: 'Marketplace',
+    help_marketplace_text: 'Browse → buy listed items. Sell → list your items for Seals of the World. Trade → direct item transfer to another mage.',
+
+    help_section_classes: 'Classes',
+    help_classes_text: 'Stonewarden (Terra) — tank. Embercaster (Ignis) — burst DPS. Moonrunner (Umbra) — evasion. Bloomsage (Aqua) — healer. Each class has unique spells and stat growth.',
+
+    help_section_shares: 'SHARES & Magic Core',
+    help_shares_text: 'SHARES (your VIZ stake) define your Magic Core bonus: floor(shares^0.3) / 5 added to all stats. More SHARES = stronger character. SHARES are never lost in battle.',
+
+    help_section_blockchain: 'Blockchain',
+    help_blockchain_text: 'Every action is a custom operation on the VIZ blockchain. Outcomes are derived from block hashes — no server, no cheating. Your character state can always be replayed from the chain.',
+
+    help_tip_mana: 'Mana regenerates ~1% per 1.2 hours. Plan your actions accordingly.',
+    help_tip_armageddon: 'Armageddon Stone: drop from Thornvine Lv5+ or craft at level 10.',
+    help_close: 'Got it'
 };
 
