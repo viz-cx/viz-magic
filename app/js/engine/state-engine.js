@@ -192,6 +192,9 @@ var StateEngine = (function() {
             case AT.HUNT:
                 events = events.concat(_handleHunt(sender, action.data, blockNum, blockHash));
                 break;
+            case AT.HUNT_ARMAGEDDON:
+                events = events.concat(_handleHuntArmageddon(sender, action.data, blockNum));
+                break;
             case AT.ITEM_EQUIP:
                 events = events.concat(_handleEquip(sender, action.data, blockNum));
                 break;
@@ -388,6 +391,58 @@ var StateEngine = (function() {
             account: sender,
             creature: data.creature,
             result: result
+        }];
+    }
+
+    /**
+     * Handle Armageddon hunt action (replay path).
+     * Spends full mana (10000 bp), consumes armageddon_stone, awards 100x XP.
+     * Called both during blockchain replay and via processArmageddonResult for live play.
+     * @param {string} sender
+     * @param {Object} data - {creature, zone, stone (item_id)}
+     * @param {number} blockNum
+     * @returns {Array} events
+     */
+    function _handleHuntArmageddon(sender, data, blockNum) {
+        var character = worldState.characters[sender];
+        var inventory = worldState.inventories[sender];
+        if (!character || !inventory) return [];
+
+        var creature = GameCreatures.getCreature(data.creature);
+        if (!creature) return [];
+
+        // Verify armageddon_stone exists and is not consumed
+        var stoneIndex = -1;
+        for (var i = 0; i < inventory.length; i++) {
+            if (inventory[i] && inventory[i].type === 'armageddon_stone' && !inventory[i].consumed) {
+                // Prefer matching by id if provided
+                if (!data.stone || inventory[i].id === data.stone) {
+                    stoneIndex = i;
+                    break;
+                }
+            }
+        }
+        if (stoneIndex === -1) {
+            console.log('StateEngine: Armageddon rejected — no valid armageddon_stone for', sender);
+            return [];
+        }
+
+        // Consume the stone
+        inventory[stoneIndex].consumed = true;
+
+        // Calculate XP: 100x normal hunt XP
+        var xp = GameFormulas.armageddonXp(character.level, creature.minLevel, creature.baseXp || 25);
+        var xpResult = CharacterSystem.addXp(character, xp);
+
+        character.lastHuntBlock = blockNum;
+
+        return [{
+            type: 'armageddon_used',
+            account: sender,
+            creature: data.creature,
+            xpGained: xp,
+            levelsGained: xpResult ? (xpResult.levelsGained || 0) : 0,
+            stoneId: data.stone || ''
         }];
     }
 
@@ -937,6 +992,26 @@ var StateEngine = (function() {
     }
 
     /**
+     * Process Armageddon for live UI — same logic as _handleHuntArmageddon.
+     * @param {string} account
+     * @param {string} creatureId
+     * @param {string} stoneId - item id of the armageddon_stone
+     * @param {number} blockNum
+     * @returns {Object|null} {xpGained, levelsGained, stoneConsumed} or null on failure
+     */
+    function processArmageddonResult(account, creatureId, stoneId, blockNum) {
+        var data = { creature: creatureId, stone: stoneId };
+        var events = _handleHuntArmageddon(account, data, blockNum);
+        if (!events.length) return null;
+        var ev = events[0];
+        return {
+            xpGained: ev.xpGained,
+            levelsGained: ev.levelsGained,
+            stoneConsumed: true
+        };
+    }
+
+    /**
      * Reset state (for testing)
      */
     function reset() {
@@ -951,6 +1026,7 @@ var StateEngine = (function() {
         getCharacter: getCharacter,
         getInventory: getInventory,
         processHuntResult: processHuntResult,
+        processArmageddonResult: processArmageddonResult,
         reset: reset
     };
 })();

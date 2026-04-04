@@ -273,22 +273,16 @@ var HuntScreen = (function() {
 
     function _resolveArmageddonFromBlock(blockNum, ch, creature, playerEnergy, user, stoneId, resultEl, t) {
         var _doResolve = function(fateEntropy, finalBlockNum) {
-            var xp = GameFormulas.armageddonXp(ch.level, creature.minLevel, creature.baseXp || 25);
-
-            // Apply XP (level-up cascade is handled by addXp)
-            var xpResult = CharacterSystem.addXp(ch, xp);
-
-            // Consume the armageddon stone from inventory
-            var state = StateEngine.getState();
-            if (state.inventories && state.inventories[user]) {
-                var inv = state.inventories[user];
-                for (var i = 0; i < inv.length; i++) {
-                    if (inv[i] && inv[i].id === stoneId) {
-                        inv[i].consumed = true;
-                        break;
-                    }
-                }
+            // Route through state-engine — single authoritative path (same as hunt)
+            var armaResult = StateEngine.processArmageddonResult(user, selectedCreature, stoneId, finalBlockNum);
+            if (!armaResult) {
+                resultEl.innerHTML = '<p class="error">' + t('hunt_armageddon_no_stone') + '</p>';
+                return;
             }
+            var xp = armaResult.xpGained;
+            var xpResult = { levelsGained: armaResult.levelsGained };
+
+            var state = StateEngine.getState();
 
             // Save checkpoint
             state.headBlock = finalBlockNum;
